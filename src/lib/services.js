@@ -45,9 +45,20 @@ export class ExpenseService {
   }
 
   static async updateExpense(id, updates) {
+    // Convert date and time to transaction_datetime if present
+    const { date, time, ...rest } = updates;
+    const updateData = { ...rest };
+    
+    if (date) {
+      const datetime = time 
+        ? `${date}T${time}:00`
+        : `${date}T00:00:00`;
+      updateData.transaction_datetime = datetime;
+    }
+    
     const { data, error } = await supabase
       .from('expenses')
-      .update(updates)
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();

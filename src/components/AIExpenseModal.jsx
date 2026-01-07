@@ -563,8 +563,10 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
 
     try {
       // Prepare expenses for saving - map to database format
+      // Note: time field is needed by ExpenseService.createExpense to build transaction_datetime
       const expensesToSave = selectedExpenses.map(expense => ({
         date: expense.date,
+        time: expense.time || null,  // Include time for transaction_datetime
         amount: parseFloat(expense.amount),
         category_id: expense.category_id,
         note: expense.description || '',

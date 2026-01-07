@@ -303,8 +303,9 @@ export async function analyzeReceiptImage(imageFile) {
       },
       body: JSON.stringify(requestBody)
     });
-  } catch {
-    throw new Error('Network error: Unable to connect to Gemini API');
+  } catch (err) {
+    // Network connection failed, likely unable to reach Google services
+    throw new Error('Network error: Unable to connect to Google AI. Please check your network or proxy settings.');
   }
 
   // Handle HTTP errors

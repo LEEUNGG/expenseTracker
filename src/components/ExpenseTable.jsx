@@ -428,7 +428,7 @@ export function ExpenseTable({
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                    <div className="relative group inline-block w-full max-w-[140px]">
+                                    <div className="relative group inline-block w-full min-w-[120px]">
                                         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                                             <span className="text-violet-500 font-bold">$</span>
                                         </div>
@@ -438,7 +438,7 @@ export function ExpenseTable({
                                             placeholder="0.00"
                                             value={newExpense.amount}
                                             onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                                            className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 text-lg font-bold rounded-xl focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 block w-full pl-8 pr-4 py-2 transition-all duration-300 text-right outline-none"
+                                            className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 text-base font-bold rounded-xl focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 block w-full pl-8 pr-3 py-2 transition-all duration-300 text-right outline-none"
                                         />
                                     </div>
                                 </td>
@@ -506,16 +506,13 @@ export function ExpenseTable({
                                                     {(() => {
                                                         const datetime = expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date);
                                                         const day = datetime.getDate();
-                                                        const hours = datetime.getHours();
-                                                        const minutes = datetime.getMinutes();
-                                                        const hasTime = hours !== 0 || minutes !== 0;
-                                                        const timeStr = hasTime ? ` ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}` : '';
-                                                        return (
-                                                            <>
-                                                                {day}日
-                                                                {hasTime && <span className="text-gray-400 ml-1">{timeStr.trim()}</span>}
-                                                            </>
-                                                        );
+                                                        // Get ordinal suffix for day (1st, 2nd, 3rd, 4th, etc.)
+                                                        const getOrdinalSuffix = (n) => {
+                                                            const s = ['th', 'st', 'nd', 'rd'];
+                                                            const v = n % 100;
+                                                            return s[(v - 20) % 10] || s[v] || s[0];
+                                                        };
+                                                        return `${day}${getOrdinalSuffix(day)}`;
                                                     })()}
                                                 </span>
                                             )}
@@ -594,7 +591,7 @@ export function ExpenseTable({
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             {isEditing ? (
-                                                <div className="relative group inline-block w-full max-w-[140px]">
+                                                <div className="relative group inline-block w-full min-w-[120px]">
                                                     <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                                                         <span className="text-violet-500 font-bold">$</span>
                                                     </div>
@@ -604,7 +601,7 @@ export function ExpenseTable({
                                                         placeholder="0.00"
                                                         value={editingExpense.amount}
                                                         onChange={(e) => setEditingExpense({ ...editingExpense, amount: e.target.value })}
-                                                        className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 text-lg font-bold rounded-xl focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 block w-full pl-8 pr-4 py-2 transition-all duration-300 text-right outline-none"
+                                                        className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 text-base font-bold rounded-xl focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 block w-full pl-8 pr-3 py-2 transition-all duration-300 text-right outline-none"
                                                     />
                                                 </div>
                                             ) : (
