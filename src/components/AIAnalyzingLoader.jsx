@@ -8,15 +8,15 @@ import { useState, useEffect } from 'react';
  * Supports dark/light mode
  */
 export function AIAnalyzingLoader({ imagePreview }) {
-  const [progressText, setProgressText] = useState('正在上传图片...');
+  const [progressText, setProgressText] = useState('Uploading image...');
 
   // Cycle through progress messages
   useEffect(() => {
     const progressMessages = [
-      '正在上传图片...',
-      'AI 正在识别内容...',
-      '正在提取消费信息...',
-      '正在整理数据...'
+      'Uploading image...',
+      'AI is recognizing content...',
+      'Extracting expense information...',
+      'Organizing data...'
     ];
     
     let index = 0;
@@ -102,15 +102,15 @@ export function AIAnalyzingLoader({ imagePreview }) {
  * @param {string[]} props.imagePreviews - Array of preview URLs for thumbnails
  */
 export function AnalysisProgress({ current, total, imagePreviews }) {
-  const [progressText, setProgressText] = useState('正在准备分析...');
+  const [progressText, setProgressText] = useState('Preparing analysis...');
 
   // Cycle through progress messages for current image
   useEffect(() => {
     const progressMessages = [
-      '正在上传图片...',
-      'AI 正在识别内容...',
-      '正在提取消费信息...',
-      '正在整理数据...'
+      'Uploading image...',
+      'AI is recognizing content...',
+      'Extracting expense information...',
+      'Organizing data...'
     ];
     
     let index = 0;
@@ -136,10 +136,10 @@ export function AnalysisProgress({ current, total, imagePreviews }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-8 space-y-6">
-      {/* Progress indicator - "正在分析 n/m 张图片" */}
+      {/* Progress indicator - "Analyzing n/m images" */}
       <div className="text-center">
         <p className="text-lg font-semibold text-gray-900 dark:text-white">
-          正在分析 <span className="text-purple-600 dark:text-purple-400">{current}</span>/<span className="text-purple-600 dark:text-purple-400">{total}</span> 张图片
+          Analyzing <span className="text-purple-600 dark:text-purple-400">{current}</span>/<span className="text-purple-600 dark:text-purple-400">{total}</span> images
         </p>
       </div>
 
@@ -240,7 +240,7 @@ export function AnalysisProgress({ current, total, imagePreviews }) {
           />
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          总进度: {Math.round(progressPercent)}%
+          Total progress: {Math.round(progressPercent)}%
         </p>
       </div>
     </div>

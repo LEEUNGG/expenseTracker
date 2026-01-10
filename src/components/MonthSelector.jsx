@@ -49,7 +49,7 @@ export function MonthSelector({ currentMonth, onPrevious, onNext }) {
   );
 
   return (
-    <div className="flex items-center justify-center gap-4">
+    <div className="flex items-center justify-center gap-2 sm:gap-4">
       <button
         onClick={handlePreviousClick}
         className={buttonClass(canGoPrevious)}
@@ -60,7 +60,7 @@ export function MonthSelector({ currentMonth, onPrevious, onNext }) {
         )} />
       </button>
 
-      <h2 className="text-2xl font-bold min-w-[200px] text-center text-gray-800 dark:text-gray-100">
+      <h2 className="text-xl sm:text-2xl font-bold min-w-[160px] sm:min-w-[200px] text-center text-gray-800 dark:text-gray-100">
         {monthName} {year}
       </h2>
 

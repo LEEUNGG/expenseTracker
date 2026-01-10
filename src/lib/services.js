@@ -18,7 +18,7 @@ export class ExpenseService {
       `)
       .gte('transaction_datetime', startDate.toISOString())
       .lte('transaction_datetime', endDate.toISOString())
-      .order('transaction_datetime', { ascending: true });
+      .order('transaction_datetime', { ascending: false });
 
     if (error) throw error;
     return data;

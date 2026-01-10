@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Pencil, Trash2, Plus, Check, X, Sparkles, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Pencil, Trash2, Plus, Check, X, Sparkles, ArrowUp, ArrowDown, ArrowUpDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export function ExpenseTable({
     expenses,
+    allExpenses = [],
     categories,
-    currentPage,
-    totalPages,
-    onPageChange,
     onCreate,
     onUpdate,
     onDelete,
@@ -37,6 +35,14 @@ export function ExpenseTable({
     // Amount column sorting state: 'none' | 'asc' | 'desc'
     const [amountSortDirection, setAmountSortDirection] = useState('none');
 
+    // Search state for filtering by amount
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const searchInputRef = useRef(null);
+
+    // Date filter state: null means show all, otherwise show specific day
+    const [selectedDay, setSelectedDay] = useState(null);
+
     // Toggle sort direction: none -> desc -> asc -> none
     const toggleAmountSort = () => {
         setAmountSortDirection(prev => {
@@ -47,25 +53,97 @@ export function ExpenseTable({
     };
 
     // Reset sort state when month changes
+    // Using a ref to track previous month to avoid cascading renders
+    const prevMonthRef = useRef(currentMonth);
     useEffect(() => {
-        setAmountSortDirection('none');
+        if (prevMonthRef.current !== currentMonth) {
+            prevMonthRef.current = currentMonth;
+            // Batch state updates in a callback to avoid cascading renders
+            const resetState = () => {
+                setAmountSortDirection('none');
+                setSearchQuery('');
+                setIsSearchOpen(false);
+                setSelectedDay(null);
+            };
+            resetState();
+        }
     }, [currentMonth]);
 
-    // Compute sorted expenses based on sort direction
+    // Focus search input when opened
+    useEffect(() => {
+        if (isSearchOpen && searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+    }, [isSearchOpen]);
+
+    // Determine if we're in search mode
+    const isSearchMode = searchQuery.trim().length > 0;
+
+    // Get days info for the current month
+    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+    const today = new Date();
+    const isCurrentMonth = currentMonth.getFullYear() === today.getFullYear() && 
+                           currentMonth.getMonth() === today.getMonth();
+    const maxDay = isCurrentMonth ? today.getDate() : daysInMonth;
+
+    // Day navigation handlers
+    const _canGoPrevDay = selectedDay === null || selectedDay > 1;
+    const _canGoNextDay = selectedDay !== null && selectedDay < maxDay;
+
+    const handlePrevDay = () => {
+        if (selectedDay === null) {
+            // From "All", go to the last day (today or month end)
+            setSelectedDay(maxDay);
+        } else if (selectedDay > 1) {
+            setSelectedDay(selectedDay - 1);
+        }
+    };
+
+    const handleNextDay = () => {
+        if (selectedDay !== null && selectedDay < maxDay) {
+            setSelectedDay(selectedDay + 1);
+        }
+    };
+
+    const handleShowAll = () => {
+        setSelectedDay(null);
+    };
+
+    // Filter expenses by day first, then by search query
+    const dayFilteredExpenses = useMemo(() => {
+        if (selectedDay === null) return allExpenses;
+        return allExpenses.filter(expense => {
+            const expenseDate = new Date(expense.transaction_datetime);
+            return expenseDate.getDate() === selectedDay;
+        });
+    }, [allExpenses, selectedDay]);
+
+    // Filter expenses by search query (amount) - search in day-filtered expenses
+    const filteredExpenses = useMemo(() => {
+        if (!isSearchMode) return dayFilteredExpenses;
+        
+        const query = searchQuery.trim();
+        return dayFilteredExpenses.filter(expense => {
+            const amount = parseFloat(expense.amount).toFixed(2);
+            return amount.includes(query);
+        });
+    }, [dayFilteredExpenses, searchQuery, isSearchMode]);
+
+    // Compute sorted expenses based on sort direction (after filtering)
     const sortedExpenses = useMemo(() => {
         // Handle edge cases: empty array or single item
-        if (!expenses || expenses.length <= 1 || amountSortDirection === 'none') {
-            return expenses;
+        if (!filteredExpenses || filteredExpenses.length <= 1 || amountSortDirection === 'none') {
+            return filteredExpenses;
         }
 
-        return [...expenses].sort((a, b) => {
+        return [...filteredExpenses].sort((a, b) => {
             const amountA = parseFloat(a.amount);
             const amountB = parseFloat(b.amount);
             return amountSortDirection === 'asc'
                 ? amountA - amountB
                 : amountB - amountA;
         });
-    }, [expenses, amountSortDirection]);
+    }, [filteredExpenses, amountSortDirection]);
 
     // Custom Scrollbar Logic
     const containerRef = useRef(null);
@@ -292,22 +370,112 @@ export function ExpenseTable({
 
     return (
         <div className="w-full">
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-gray-500 dark:from-white dark:to-gray-400 bg-clip-text text-transparent">Daily Expenses</h2>
-                <div className="flex items-center gap-3">
-                    {selectedIds.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-2 min-w-0">
+                    <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-gray-500 dark:from-white dark:to-gray-400 bg-clip-text text-transparent whitespace-nowrap">Daily Expenses</h2>
+                    {/* Search Box - Compact design */}
+                    <div className="relative flex items-center">
+                        <div className={cn(
+                            "flex items-center h-8 rounded-lg border transition-all duration-300",
+                            isSearchOpen 
+                                ? "w-36 bg-white dark:bg-gray-800 border-violet-300 dark:border-violet-700 shadow-sm" 
+                                : "w-8 bg-gray-100/80 dark:bg-gray-800/80 border-transparent hover:bg-violet-50 dark:hover:bg-violet-900/30 cursor-pointer"
+                        )}>
+                            <button
+                                onClick={() => {
+                                    if (isSearchOpen && searchQuery) {
+                                        setSearchQuery('');
+                                    }
+                                    setIsSearchOpen(!isSearchOpen);
+                                }}
+                                className={cn(
+                                    "flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg transition-colors",
+                                    isSearchOpen 
+                                        ? "text-violet-600 dark:text-violet-400" 
+                                        : "text-gray-400 dark:text-gray-500 hover:text-violet-500"
+                                )}
+                                title={isSearchOpen ? "Close search" : "Search by amount"}
+                            >
+                                <Search className="w-3.5 h-3.5" />
+                            </button>
+                            {isSearchOpen && (
+                                <input
+                                    ref={searchInputRef}
+                                    type="text"
+                                    placeholder="Amount..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="flex-1 w-full h-full bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 outline-none pr-2"
+                                />
+                            )}
+                        </div>
+                        {/* Search result count - show as badge */}
+                        {isSearchMode && (
+                            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 rounded-md animate-in fade-in duration-200">
+                                {filteredExpenses.length}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                    {/* Day Selector - Compact inline design */}
+                    <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/80 rounded-lg p-0.5">
                         <button
-                            onClick={onBatchDelete}
-                            className="flex items-center justify-center gap-2 w-[115px] py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-600 rounded-xl hover:from-red-600 hover:to-rose-700 transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                            onClick={handlePrevDay}
+                            disabled={selectedDay === 1}
+                            className={cn(
+                                "p-1.5 rounded-md transition-all duration-200",
+                                selectedDay === 1
+                                    ? "opacity-30 cursor-not-allowed text-gray-400"
+                                    : "hover:bg-white dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                            )}
+                            title="Previous day"
                         >
-                            <Trash2 className="w-4 h-4" />
-                            Delete ({selectedIds.length})
+                            <ChevronLeft className="w-3.5 h-3.5" />
                         </button>
+                        
+                        <button
+                            onClick={handleShowAll}
+                            className={cn(
+                                "px-2 py-1 text-xs font-medium rounded-md transition-all duration-200 min-w-[50px]",
+                                selectedDay === null
+                                    ? "bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-400 shadow-sm"
+                                    : "text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-700/50"
+                            )}
+                        >
+                            {selectedDay === null ? 'All' : `${selectedDay}${getOrdinalSuffix(selectedDay)}`}
+                        </button>
+                        
+                        <button
+                            onClick={handleNextDay}
+                            disabled={selectedDay === null || selectedDay >= maxDay}
+                            className={cn(
+                                "p-1.5 rounded-md transition-all duration-200",
+                                (selectedDay === null || selectedDay >= maxDay)
+                                    ? "opacity-30 cursor-not-allowed text-gray-400"
+                                    : "hover:bg-white dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                            )}
+                            title="Next day"
+                        >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    {selectedIds.length > 0 ? (
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <button
+                                onClick={onBatchDelete}
+                                className="flex items-center justify-center gap-2 w-full sm:w-[115px] py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-600 rounded-xl hover:from-red-600 hover:to-rose-700 transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                Delete ({selectedIds.length})
+                            </button>
+                        </div>
                     ) : (
-                        <>
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
                             <button
                                 onClick={onAIEntry}
-                                className="flex items-center justify-center gap-2 w-[115px] py-2 text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl hover:from-violet-700 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                                className="flex items-center justify-center gap-2 flex-1 sm:flex-none sm:w-[115px] py-2 text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl hover:from-violet-700 hover:to-indigo-700 transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
                             >
                                 <Sparkles className="w-4 h-4" />
                                 Ai add
@@ -317,7 +485,7 @@ export function ExpenseTable({
                                 onClick={handleAddClick}
                                 disabled={isAdding}
                                 className={cn(
-                                    "flex items-center justify-center gap-2 w-[115px] py-2 text-sm font-semibold rounded-xl transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0",
+                                    "flex items-center justify-center gap-2 flex-1 sm:flex-none sm:w-[115px] py-2 text-sm font-semibold rounded-xl transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0",
                                     isAdding
                                         ? "bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed"
                                         : "bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-400 border border-violet-100 dark:border-violet-900/50 hover:bg-violet-50 dark:hover:bg-violet-900/20"
@@ -326,7 +494,7 @@ export function ExpenseTable({
                                 <Plus className="w-4 h-4" />
                                 Manual Add
                             </button>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
@@ -605,7 +773,12 @@ export function ExpenseTable({
                                                     />
                                                 </div>
                                             ) : (
-                                                <span className="font-medium text-gray-900 dark:text-white">
+                                                <span className={cn(
+                                                    "font-medium",
+                                                    searchQuery && parseFloat(expense.amount).toFixed(2).includes(searchQuery.trim())
+                                                        ? "text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 rounded-lg"
+                                                        : "text-gray-900 dark:text-white"
+                                                )}>
                                                     {parseFloat(expense.amount).toFixed(2)}
                                                 </span>
                                             )}
@@ -675,29 +848,20 @@ export function ExpenseTable({
                 </div>
             )}
 
-            {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                        Page <span className="font-semibold text-gray-900 dark:text-white">{currentPage}</span> of <span className="font-semibold text-gray-900 dark:text-white">{totalPages}</span>
-                    </span>
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-                            disabled={currentPage === 1}
-                            className="px-3 py-1 text-sm font-medium text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Previous
-                        </button>
-                        <button
-                            onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-                            disabled={currentPage === totalPages}
-                            className="px-3 py-1 text-sm font-medium text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Next
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Record count - show at bottom */}
+            <div className="flex items-center justify-center mt-4 pt-3 border-t border-gray-100 dark:border-gray-700/30">
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                    {filteredExpenses.length} {filteredExpenses.length === 1 ? 'record' : 'records'}
+                    {selectedDay !== null && ` on ${selectedDay}${getOrdinalSuffix(selectedDay)}`}
+                </span>
+            </div>
         </div>
     );
+}
+
+// Helper function for ordinal suffix
+function getOrdinalSuffix(n) {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return s[(v - 20) % 10] || s[v] || s[0];
 }

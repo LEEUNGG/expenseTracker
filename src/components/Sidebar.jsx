@@ -1,36 +1,38 @@
 import { useState } from 'react';
 import { Settings, Moon, Sun, X, Plus, Edit2, Trash2, Save } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCategoryDelete, onCategoryCreate }) {
+  const { theme } = useTheme();
   const [showSettings, setShowSettings] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(null); // 'edit' or 'new'
-  const [editData, setEditData] = useState({ name: '', emoji: '', color: '#a78bfa' });
+  const [editData, setEditData] = useState({ name: '', emoji: '', color: '#a78bfa', note: '' });
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newCategory, setNewCategory] = useState({ name: '', emoji: '', color: '#a78bfa' });
+  const [newCategory, setNewCategory] = useState({ name: '', emoji: '', color: '#a78bfa', note: '' });
 
   const handleEdit = (category) => {
     setEditingCategory(category.id);
-    setEditData({ name: category.name, emoji: category.emoji, color: category.color || '#3b82f6' });
+    setEditData({ name: category.name, emoji: category.emoji, color: category.color || '#3b82f6', note: category.note || '' });
   };
 
   const handleSave = async () => {
     await onCategoryUpdate(editingCategory, editData);
     setEditingCategory(null);
-    setEditData({ name: '', emoji: '', color: '#3b82f6' });
+    setEditData({ name: '', emoji: '', color: '#3b82f6', note: '' });
   };
 
   const handleCancel = () => {
     setEditingCategory(null);
-    setEditData({ name: '', emoji: '', color: '#3b82f6' });
+    setEditData({ name: '', emoji: '', color: '#3b82f6', note: '' });
   };
 
   const handleCreate = async () => {
     await onCategoryCreate(newCategory);
     setShowAddForm(false);
-    setNewCategory({ name: '', emoji: '', color: '#3b82f6' });
+    setNewCategory({ name: '', emoji: '', color: '#3b82f6', note: '' });
   };
 
   const handleDelete = async (id) => {
@@ -39,7 +41,16 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
     }
   };
 
-  const emojis = ['🍜', '🚗', '🛍️', '🎮', '💊', '📚', '🏠', '📦', '💼', '✈️', '🎬', '🎵', '🏃', '🎨', '💻', '📱'];
+  const handleEmojiSelect = (emojiData, mode) => {
+    if (mode === 'edit') {
+      setEditData({ ...editData, emoji: emojiData.emoji });
+    } else if (mode === 'new') {
+      setNewCategory({ ...newCategory, emoji: emojiData.emoji });
+    }
+    setShowEmojiPicker(null);
+  };
+
+  const emojiPickerTheme = theme === 'dark' ? Theme.DARK : Theme.LIGHT;
 
   return (
     <>
@@ -93,19 +104,15 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                                   {editData.emoji}
                                 </button>
                                 {showEmojiPicker === 'edit' && (
-                                  <div className="absolute top-full left-0 mt-2 z-50 p-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl grid grid-cols-4 gap-1 w-48">
-                                    {emojis.map(emoji => (
-                                      <button
-                                        key={emoji}
-                                        onClick={() => {
-                                          setEditData({ ...editData, emoji });
-                                          setShowEmojiPicker(null);
-                                        }}
-                                        className="w-10 h-10 flex items-center justify-center text-xl hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                                      >
-                                        {emoji}
-                                      </button>
-                                    ))}
+                                  <div className="absolute top-full left-0 mt-2 z-50">
+                                    <EmojiPicker
+                                      onEmojiClick={(emojiData) => handleEmojiSelect(emojiData, 'edit')}
+                                      theme={emojiPickerTheme}
+                                      searchPlaceholder="Search emoji..."
+                                      width={280}
+                                      height={350}
+                                      previewConfig={{ showPreview: false }}
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -127,22 +134,29 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                                   className="w-10 h-8 p-0.5 border border-gray-200 dark:border-gray-500 rounded-lg cursor-pointer bg-white dark:bg-gray-600"
                                 />
                               </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={handleSave}
-                                  className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs font-medium"
-                                >
-                                  <Save className="w-3.5 h-3.5" />
-                                  <span>Save</span>
-                                </button>
-                                <button
-                                  onClick={handleCancel}
-                                  className="flex items-center gap-1 px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-xs font-medium"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                  <span>Cancel</span>
-                                </button>
-                              </div>
+                            </div>
+                            <textarea
+                              value={editData.note}
+                              onChange={(e) => setEditData({ ...editData, note: e.target.value })}
+                              placeholder="Add a note (optional)"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-600 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all resize-none"
+                              rows={2}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={handleSave}
+                                className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs font-medium"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                                <span>Save</span>
+                              </button>
+                              <button
+                                onClick={handleCancel}
+                                className="flex items-center gap-1 px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-xs font-medium"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancel</span>
+                              </button>
                             </div>
                           </div>
                         ) : (
@@ -152,8 +166,13 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                               style={{ backgroundColor: category.color || '#3b82f6' }}
                             />
                             <span className="text-xl flex-shrink-0">{category.emoji}</span>
-                            <span className="flex-1 truncate">{category.name}</span>
-                            <div className="flex items-center gap-1">
+                            <div className="flex-1 min-w-0">
+                              <span className="block truncate">{category.name}</span>
+                              {category.note && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{category.note}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               <button
                                 onClick={() => handleEdit(category)}
                                 className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
@@ -187,19 +206,15 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                             {newCategory.emoji || '✨'}
                           </button>
                           {showEmojiPicker === 'new' && (
-                            <div className="absolute top-full left-0 mt-2 z-50 p-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl grid grid-cols-4 gap-1 w-48">
-                              {emojis.map(emoji => (
-                                <button
-                                  key={emoji}
-                                  onClick={() => {
-                                    setNewCategory({ ...newCategory, emoji });
-                                    setShowEmojiPicker(null);
-                                  }}
-                                  className="w-10 h-10 flex items-center justify-center text-xl hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
+                            <div className="absolute top-full left-0 mt-2 z-50">
+                              <EmojiPicker
+                                onEmojiClick={(emojiData) => handleEmojiSelect(emojiData, 'new')}
+                                theme={emojiPickerTheme}
+                                searchPlaceholder="Search emoji..."
+                                width={280}
+                                height={350}
+                                previewConfig={{ showPreview: false }}
+                              />
                             </div>
                           )}
                         </div>
@@ -221,23 +236,30 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                             className="w-10 h-8 p-0 border border-gray-200 dark:border-gray-500 rounded cursor-pointer overflow-hidden"
                           />
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setShowAddForm(false);
-                              setNewCategory({ name: '', emoji: '', color: '#3b82f6' });
-                            }}
-                            className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm font-medium"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleCreate}
-                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
-                          >
-                            Create
-                          </button>
-                        </div>
+                      </div>
+                      <textarea
+                        value={newCategory.note}
+                        onChange={(e) => setNewCategory({ ...newCategory, note: e.target.value })}
+                        placeholder="Add a note (optional)"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-600 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all resize-none"
+                        rows={2}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setShowAddForm(false);
+                            setNewCategory({ name: '', emoji: '', color: '#3b82f6', note: '' });
+                          }}
+                          className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleCreate}
+                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+                        >
+                          Create
+                        </button>
                       </div>
                     </div>
                   ) : (

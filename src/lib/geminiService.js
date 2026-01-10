@@ -7,7 +7,7 @@
 
 // API Configuration
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // Supported image formats
@@ -71,10 +71,16 @@ export function imageToBase64(file) {
 /**
  * Creates the structured prompt for Gemini API
  * @param {string} today - Today's date in YYYY-MM-DD format
+ * @param {Array} categories - Available categories from backend
  * @returns {string} - The prompt text
  */
-function createAnalysisPrompt(today) {
-  return `你是一个专业的收据/账单识别助手。请分析这张图片，提取所有消费记录。
+function createAnalysisPrompt(today, categories = []) {
+  // Build category list string from dynamic categories
+  const categoryNames = categories.length > 0
+    ? categories.map(c => c.name).join(', ')
+    : 'Dining, Transport, Shopping, Entertainment, Medical, Education, Housing, Other';
+
+  return `你是一个专业的收据/账单识别助手。请分析这几张图片，都是支付宝或者微信的截图，根据里面的内容提取所有消费记录。
 
 今天的日期是：${today}
 
@@ -85,7 +91,7 @@ function createAnalysisPrompt(today) {
       "date": "YYYY-MM-DD",
       "time": "HH:mm" 或 null,
       "amount": 数字（不带货币符号）,
-      "category": "分类名称（从以下选择：Dining, Transport, Shopping, Entertainment, Medical, Education, Housing, Other）",
+      "category": "分类名称（从以下选择：${categoryNames}）",
       "description": "消费描述",
       "is_essential": true/false（是否为必要消费）
     }
@@ -97,7 +103,7 @@ function createAnalysisPrompt(today) {
 2. 金额请转换为数字，去掉货币符号
 3. 日期格式必须为 YYYY-MM-DD，如果无法确定日期，或显示为今天，使用今天 (${today}) 的日期，显示为昨天，就是用前一日的日期
 4. 时间格式必须为 HH:mm（24小时制），如果图片中显示了具体的交易时间（小时:分钟），请提取到 time 字段；如果没有显示时间，time 字段返回 null
-5. 分类请从给定列表中选择最接近的一个
+5. 分类，请从那个消费去判断，然后在我提供给你的选项列表内，选出最接近的一个。
 6. is_essential 判断标准：食物、交通、医疗、住房等为必要消费(true)，娱乐、购物等为非必要消费(false)
 7. 只返回 JSON，不要包含其他文字或 markdown 代码块标记`;
 }
@@ -249,10 +255,11 @@ export function mapCategoryToId(categoryName, categories) {
 /**
  * Analyzes a receipt image using Gemini API
  * @param {File} imageFile - The image file to analyze
+ * @param {Array} categories - Available categories from backend
  * @returns {Promise<object>} - The parsed expense data
  * @throws {Error} - If analysis fails
  */
-export async function analyzeReceiptImage(imageFile) {
+export async function analyzeReceiptImage(imageFile, categories = []) {
   // Validate file
   if (!imageFile) {
     throw new Error('No image file provided');
@@ -282,7 +289,7 @@ export async function analyzeReceiptImage(imageFile) {
   const requestBody = {
     contents: [{
       parts: [
-        { text: createAnalysisPrompt(todayDate) },
+        { text: createAnalysisPrompt(todayDate, categories) },
         {
           inline_data: {
             mime_type: imageFile.type,
@@ -303,7 +310,7 @@ export async function analyzeReceiptImage(imageFile) {
       },
       body: JSON.stringify(requestBody)
     });
-  } catch (err) {
+  } catch {
     // Network connection failed, likely unable to reach Google services
     throw new Error('Network error: Unable to connect to Google AI. Please check your network or proxy settings.');
   }
@@ -351,6 +358,8 @@ export function transformExpensesForEditor(expenses, categories) {
     amount: expense.amount,
     category_id: mapCategoryToId(expense.category, categories),
     description: expense.description,
+    originalDescription: expense.description || '', // Store AI's original description for comparison
+    descriptionModified: false, // Track if user has meaningfully modified the description
     is_essential: expense.is_essential,
     selected: true, // Default to selected
     // Preserve sourceImageIndex if present (for batch analysis)

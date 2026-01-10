@@ -25,6 +25,37 @@ function calculateTickPosition(value, domain, height, margin) {
   return margin.top + ratio * chartHeight;
 }
 
+/**
+ * Filter spending data to only show up to current day for current month.
+ * For past months, returns data unchanged.
+ * For current month, sets spending to null for future days.
+ * 
+ * @param {Array} data - Chart data with day, budget, spending properties
+ * @param {Date} currentMonth - The month being viewed
+ * @param {Date} [today] - Optional today's date (for testing)
+ * @returns {Array} Filtered data with null spending for future days in current month
+ */
+function filterSpendingData(data, currentMonth, today = new Date()) {
+  const currentDay = today.getDate();
+  
+  // Check if we're viewing the current month
+  const viewingMonth = currentMonth ? new Date(currentMonth) : new Date();
+  const isCurrentMonth = 
+    viewingMonth.getFullYear() === today.getFullYear() && 
+    viewingMonth.getMonth() === today.getMonth();
+  
+  // If not current month, return data as-is (show full spending line)
+  if (!isCurrentMonth) {
+    return data;
+  }
+  
+  // For current month, set spending to null for future days
+  return data.map((point) => ({
+    ...point,
+    spending: parseInt(point.day) > currentDay ? null : point.spending
+  }));
+}
+
 const CustomizedAxisTick = (props) => {
   const { x, y, payload, data, isDark } = props;
   const dayData = data.find(d => d.day === payload.value);
@@ -120,7 +151,7 @@ const StickyYAxis = ({ domain, height, isDark, margin }) => {
   );
 };
 
-export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
+export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth }) {
   const containerRef = useRef(null);
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -128,11 +159,16 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
   // Y-axis domain
   const yDomain = useMemo(() => [0, maxSpending > 0 ? maxSpending : 1000], [maxSpending]);
 
+  // Filter spending data to only show up to current day for current month
+  const filteredData = useMemo(() => {
+    return filterSpendingData(data, currentMonth);
+  }, [data, currentMonth]);
+
   const handleClick = (e) => {
     if (e && e.activeLabel && onBudgetClick) {
-      const currentDayIndex = data.findIndex(d => d.day === e.activeLabel);
-      const prevBudget = currentDayIndex > 0 ? data[currentDayIndex - 1].budget : 0;
-      const dailyBudget = data[currentDayIndex].budget - prevBudget;
+      const currentDayIndex = filteredData.findIndex(d => d.day === e.activeLabel);
+      const prevBudget = currentDayIndex > 0 ? filteredData[currentDayIndex - 1].budget : 0;
+      const dailyBudget = filteredData[currentDayIndex].budget - prevBudget;
 
       onBudgetClick(e.activeLabel, dailyBudget);
     }
@@ -143,7 +179,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
       const today = new Date().getDate();
       const containerWidth = containerRef.current.scrollWidth;
       const clientWidth = containerRef.current.clientWidth;
-      const itemWidth = containerWidth / data.length;
+      const itemWidth = containerWidth / filteredData.length;
       const scrollPosition = (today - 1) * itemWidth - clientWidth / 2 + itemWidth / 2;
 
       containerRef.current.scrollTo({
@@ -151,7 +187,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
         behavior: 'smooth',
       });
     }
-  }, [data.length]);
+  }, [filteredData.length]);
 
   const [scrollbarState, setScrollbarState] = useState({ left: 0, thumbWidth: 0, isVisible: false });
   const trackRef = useRef(null);
@@ -236,7 +272,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
         observer.disconnect();
       };
     }
-  }, [updateScrollbar, data.length, handleMouseMove]);
+  }, [updateScrollbar, filteredData.length, handleMouseMove]);
 
   const handleScrollbarClick = (e) => {
     if (isDragging.current) return;
@@ -284,16 +320,16 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
               display: none;
             }
           `}} />
-          <div style={{ minWidth: `${data.length * 60}px`, height: `${CHART_HEIGHT}px` }}>
+          <div style={{ minWidth: `${filteredData.length * 60}px`, height: `${CHART_HEIGHT}px` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data} margin={CHART_MARGIN} onClick={handleClick} style={{ cursor: 'pointer' }}>
+              <LineChart data={filteredData} margin={CHART_MARGIN} onClick={handleClick} style={{ cursor: 'pointer' }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-gray-200 dark:stroke-gray-800" />
                 <XAxis
                   dataKey="day"
                   axisLine={false}
                   tickLine={false}
                   interval={0}
-                  tick={<CustomizedAxisTick data={data} isDark={isDark} />}
+                  tick={<CustomizedAxisTick data={filteredData} isDark={isDark} />}
                   height={50}
                 />
                 {/* Task 1.3: Hide native Y-Axis */}
@@ -305,7 +341,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
-                      const dayData = data.find(d => d.day === label);
+                      const dayData = filteredData.find(d => d.day === label);
                       const typeNames = {
                         holiday: 'Holiday',
                         weekend: 'Weekend',
@@ -386,4 +422,4 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick }) {
 
 // Export utility functions for testing
 // eslint-disable-next-line react-refresh/only-export-components
-export { calculateYAxisTicks, calculateTickPosition };
+export { calculateYAxisTicks, calculateTickPosition, filterSpendingData };

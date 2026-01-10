@@ -42,6 +42,9 @@ INSERT INTO categories (name, emoji, color) VALUES
   ('Daily Necessities', '🧴', '#f472b6') -- Sakura Pink
 ON CONFLICT DO NOTHING;
 
+-- Add note column to categories table for category notes feature
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '';
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_expenses_datetime ON expenses(transaction_datetime);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);

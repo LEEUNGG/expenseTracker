@@ -19,7 +19,6 @@ function App() {
   const [categories, setCategories] = useState([]);
   const [budgetAdjustments, setBudgetAdjustments] = useState([]);
   const [holidays, setHolidays] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
@@ -51,8 +50,6 @@ function App() {
     }));
   }, []);
 
-  const pageSize = 10;
-
   const currentYear = currentMonth.getFullYear();
   const currentMonthNum = currentMonth.getMonth() + 1;
 
@@ -63,14 +60,6 @@ function App() {
         expenseDate.getMonth() === currentMonthNum - 1;
     });
   }, [expenses, currentYear, currentMonthNum]);
-
-  const paginatedExpenses = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredExpenses.slice(start, end);
-  }, [filteredExpenses, currentPage]);
-
-  const totalPages = Math.ceil(filteredExpenses.length / pageSize);
 
   const chartData = useMemo(() => {
     const daysInMonth = new Date(currentYear, currentMonthNum, 0).getDate();
@@ -231,7 +220,6 @@ function App() {
 
     if (newMonth >= minMonth) {
       setCurrentMonth(newMonth);
-      setCurrentPage(1);
       setSelectedExpenseIds([]);
     }
   };
@@ -243,7 +231,6 @@ function App() {
 
     if (newMonth <= maxMonth) {
       setCurrentMonth(newMonth);
-      setCurrentPage(1);
       setSelectedExpenseIds([]);
     }
   };
@@ -406,19 +393,19 @@ function App() {
 
       <div>
         <header className="sticky top-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-2xl border-b border-white/20 dark:border-gray-700/50 shadow-lg">
-          <div className="w-[80%] mx-auto">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-4">
+          <div className="w-[80%] mx-auto px-2 sm:px-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[4rem] py-2">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                 <button
                   onClick={() => setIsSidebarOpen(true)}
-                  className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-300 backdrop-blur-sm"
+                  className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-300 backdrop-blur-sm flex-shrink-0"
                 >
                   <Menu className="w-5 h-5 text-gray-700 dark:text-gray-200" />
                 </button>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">Expense Tracker</h1>
+                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent whitespace-nowrap truncate">Expense Tracker</h1>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={handleRefreshData}
                   disabled={isLoading}
@@ -490,6 +477,7 @@ function App() {
                       data={chartData}
                       maxSpending={maxSpending}
                       onBudgetClick={handleBudgetAdjust}
+                      currentMonth={currentMonth}
                     />
                   </div>
 
@@ -506,12 +494,10 @@ function App() {
 
                 <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
                   <ExpenseTable
-                    expenses={paginatedExpenses}
+                    expenses={filteredExpenses}
+                    allExpenses={filteredExpenses}
                     categories={categories.filter(c => !c.is_deleted)}
                     currentMonth={currentMonth}
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={setCurrentPage}
                     onCreate={handleCreateExpense}
                     onUpdate={handleUpdateExpense}
                     onDelete={handleDeleteExpense}

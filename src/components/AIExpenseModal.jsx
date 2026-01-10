@@ -10,6 +10,7 @@ import {
 import { AIAnalyzingLoader, AnalysisProgress } from './AIAnalyzingLoader';
 import { DeduplicationService } from '../lib/deduplicationService';
 import { ExpenseService } from '../lib/services';
+import { isDescriptionModified, formatDateTime } from '../lib/expenseUtils';
 
 /**
  * Animation classes for state transitions
@@ -423,7 +424,7 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
       });
 
       try {
-        const result = await analyzeReceiptImage(imageFile);
+        const result = await analyzeReceiptImage(imageFile, categories);
         
         // Collect expenses from this image with sourceImageIndex (Requirements 3.3, 3.6)
         if (result.expenses && result.expenses.length > 0) {
@@ -548,6 +549,7 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
   /**
    * Handles confirm button click - saves selected expenses to database
    * Implements batch save logic per Requirements 3.5
+   * Only includes description if it has been meaningfully modified (Requirements 2.4, 2.5)
    */
   const handleConfirmSave = useCallback(async () => {
     // Collect all selected expenses
@@ -564,12 +566,14 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
     try {
       // Prepare expenses for saving - map to database format
       // Note: time field is needed by ExpenseService.createExpense to build transaction_datetime
+      // Only include description if it has been meaningfully modified
       const expensesToSave = selectedExpenses.map(expense => ({
         date: expense.date,
         time: expense.time || null,  // Include time for transaction_datetime
         amount: parseFloat(expense.amount),
         category_id: expense.category_id,
-        note: expense.description || '',
+        // Only include description if user has meaningfully modified it
+        note: expense.descriptionModified ? expense.description : '',
         is_essential: expense.is_essential
       }));
 
@@ -1040,12 +1044,155 @@ function NoResultsState({ error, onReupload }) {
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSaving }) {
+  // Custom Scrollbar State and Refs - Requirements 4.3
+  const containerRef = useRef(null);
+  const trackRef = useRef(null);
+  const [scrollbarState, setScrollbarState] = useState({ left: 0, thumbWidth: 0, isVisible: false });
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startScrollLeft = useRef(0);
+
+  /**
+   * Updates scrollbar thumb position and visibility based on container scroll state
+   * Calculates thumb width as percentage of visible area and position based on scroll offset
+   * Requirements: 4.3
+   */
+  const updateScrollbar = useCallback(() => {
+    if (containerRef.current) {
+      const { scrollLeft, clientWidth, scrollWidth } = containerRef.current;
+      const isVisible = scrollWidth > clientWidth + 1;
+      const thumbWidth = Math.max((clientWidth / scrollWidth) * 100, 10);
+      const left = scrollWidth > clientWidth
+        ? (scrollLeft / (scrollWidth - clientWidth)) * (100 - thumbWidth)
+        : 0;
+      setScrollbarState({ left, thumbWidth, isVisible });
+    }
+  }, []);
+
+  /**
+   * Handles mouse move during scrollbar thumb drag
+   * Calculates scroll position based on mouse movement relative to track width
+   * Requirements: 4.6
+   */
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging.current || !containerRef.current || !trackRef.current) return;
+
+    const deltaX = e.clientX - startX.current;
+    const { scrollWidth, clientWidth } = containerRef.current;
+    if (scrollWidth <= clientWidth) return;
+
+    const trackWidth = trackRef.current.clientWidth;
+    const availableTrackWidth = trackWidth * (1 - scrollbarState.thumbWidth / 100);
+    const availableScrollWidth = scrollWidth - clientWidth;
+
+    if (availableTrackWidth > 0) {
+      const scrollDelta = (deltaX / availableTrackWidth) * availableScrollWidth;
+      containerRef.current.scrollLeft = startScrollLeft.current + scrollDelta;
+    }
+  }, [scrollbarState.thumbWidth]);
+
+  /**
+   * Handles mouse up to complete scrollbar thumb drag
+   * Cleans up event listeners and restores text selection
+   * Requirements: 4.6
+   */
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.body.style.userSelect = '';
+  }, [handleMouseMove]);
+
+  // Store handleMouseUp in a ref so we can reference it in cleanup
+  const handleMouseUpRef = useRef(handleMouseUp);
+  useEffect(() => {
+    handleMouseUpRef.current = handleMouseUp;
+  }, [handleMouseUp]);
+
+  /**
+   * Handles mouse down on scrollbar thumb to initiate drag
+   * Sets up event listeners for drag tracking
+   * Requirements: 4.6
+   */
+  const handleThumbMouseDown = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startScrollLeft.current = containerRef.current.scrollLeft;
+    
+    const onMouseUp = () => {
+      handleMouseUpRef.current();
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.userSelect = 'none';
+  }, [handleMouseMove]);
+
+  /**
+   * Handles click on scrollbar track to scroll to clicked position
+   * Calculates target scroll position based on click location
+   * Requirements: 4.5
+   */
+  const handleScrollbarClick = useCallback((e) => {
+    if (isDragging.current) return;
+    if (containerRef.current && trackRef.current) {
+      const rect = trackRef.current.getBoundingClientRect();
+      const clickPos = (e.clientX - rect.left) / rect.width;
+      const { scrollWidth, clientWidth } = containerRef.current;
+
+      if (scrollWidth <= clientWidth) return;
+
+      const thumbWidthRatio = clientWidth / scrollWidth;
+      const targetScrollRatio = (clickPos - thumbWidthRatio / 2) / (1 - thumbWidthRatio);
+      const targetScroll = Math.max(0, Math.min(targetScrollRatio * (scrollWidth - clientWidth), scrollWidth - clientWidth));
+
+      containerRef.current.scrollTo({ left: targetScroll, behavior: 'smooth' });
+    }
+  }, []);
+
+  /**
+   * Sets up event listeners for scrollbar updates
+   * Listens to scroll, resize, and content size changes
+   * Ensures proper cleanup on unmount
+   * Requirements: 4.2, 4.3
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      updateScrollbar();
+      container.addEventListener('scroll', updateScrollbar);
+      window.addEventListener('resize', updateScrollbar);
+
+      // Observer to detect content size changes
+      const observer = new ResizeObserver(updateScrollbar);
+      observer.observe(container);
+      // Observe the table itself since it's the child that overflows
+      const table = container.querySelector('table');
+      if (table) observer.observe(table);
+
+      return () => {
+        container.removeEventListener('scroll', updateScrollbar);
+        window.removeEventListener('resize', updateScrollbar);
+        document.removeEventListener('mousemove', handleMouseMove);
+        observer.disconnect();
+      };
+    }
+  }, [updateScrollbar, expenses, handleMouseMove]);
+
   /**
    * Updates a specific expense field
+   * For description field, also updates descriptionModified status
    */
   const handleExpenseUpdate = useCallback((expenseId, field, value) => {
     const updatedExpenses = expenses.map(expense => {
       if (expense.id === expenseId) {
+        // Special handling for description field - track modification status
+        if (field === 'description') {
+          const modified = isDescriptionModified(expense.originalDescription, value);
+          return { ...expense, [field]: value, descriptionModified: modified };
+        }
         return { ...expense, [field]: value };
       }
       return expense;
@@ -1089,17 +1236,6 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
   const selectedDuplicatesCount = expenses.filter(e => e.selected && e.isDuplicated).length;
   const hasDuplicatesSelected = selectedDuplicatesCount > 0;
 
-  /**
-   * Format date to display only day number (Requirements 4.4)
-   * @param {string} dateStr - Date string in YYYY-MM-DD format
-   * @returns {string} - Day number (1-31)
-   */
-  const formatDateDisplay = (dateStr) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return String(date.getDate());
-  };
-
   return (
     <div className="space-y-4">
       {/* Header with count and select all */}
@@ -1127,12 +1263,21 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
         </button>
       </div>
 
-      {/* Table container */}
-      <div 
-        className="rounded-xl border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto"
-        style={{ scrollbarWidth: 'thin' }}
-      >
-        <table className="w-full text-sm text-left">
+      {/* Table container with horizontal scroll */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto">
+        {/* Horizontal scroll wrapper - hides native scrollbar */}
+        <div 
+          ref={containerRef}
+          className="overflow-x-auto scrollbar-hide"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          <style dangerouslySetInnerHTML={{
+            __html: `
+            .scrollbar-hide::-webkit-scrollbar {
+              display: none;
+            }
+          `}} />
+          <table className="w-full text-sm text-left min-w-max">
           <thead className="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-gray-800 dark:text-gray-400 sticky top-0 z-10">
             <tr>
               <th scope="col" className="p-3 w-10">
@@ -1144,13 +1289,13 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
                 />
               </th>
               {/* Status column - Requirements 4.1 */}
-              <th scope="col" className="px-2 py-3 text-center">Status</th>
-              {/* Date/Time column - Requirements 4.4, 4.5 */}
-              <th scope="col" className="px-3 py-3 text-center">Date/Time</th>
-              <th scope="col" className="px-3 py-3 text-center">Category</th>
-              <th scope="col" className="px-3 py-3">Description</th>
-              <th scope="col" className="px-3 py-3 text-center">Essential</th>
-              <th scope="col" className="px-3 py-3 text-right">Amount</th>
+              <th scope="col" className="px-2 py-3 text-center whitespace-nowrap">Status</th>
+              {/* Date/Time column - Requirements 3.1, 3.2, 3.3 */}
+              <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Date/Time</th>
+              <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Category</th>
+              <th scope="col" className="px-3 py-3 whitespace-nowrap">Description</th>
+              <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Essential</th>
+              <th scope="col" className="px-3 py-3 text-right whitespace-nowrap">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -1176,7 +1321,7 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
                 </td>
                 
                 {/* Status - Requirements 4.1, 4.2, 4.3 */}
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center whitespace-nowrap">
                   {expense.isDuplicated ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                       Duplicated
@@ -1188,22 +1333,15 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
                   )}
                 </td>
                 
-                {/* Date/Time - Requirements 4.4, 4.5 */}
-                <td className="px-3 py-2 text-center">
-                  <div className="flex flex-col items-center">
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {formatDateDisplay(expense.date)}日
-                    </span>
-                    {expense.time && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">
-                        {expense.time}
-                      </span>
-                    )}
-                  </div>
+                {/* Date/Time - Requirements 3.1, 3.2, 3.3 */}
+                <td className="px-3 py-2 text-center whitespace-nowrap">
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatDateTime(expense.date, expense.time)}
+                  </span>
                 </td>
                 
                 {/* Category */}
-                <td className="px-3 py-2 text-center">
+                <td className="px-3 py-2 text-center whitespace-nowrap">
                   <select
                     value={expense.category_id}
                     onChange={(e) => handleExpenseUpdate(expense.id, 'category_id', e.target.value)}
@@ -1217,19 +1355,25 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
                   </select>
                 </td>
                 
-                {/* Description */}
+                {/* Description - styled based on modification status */}
+                {/* Description - styled based on modification status (Requirements 2.2, 2.3) */}
                 <td className="px-3 py-2">
                   <input
                     type="text"
                     placeholder="Description (optional)"
                     value={expense.description || ''}
                     onChange={(e) => handleExpenseUpdate(expense.id, 'description', e.target.value)}
-                    className="w-full bg-white/80 dark:bg-gray-800/80 border border-violet-100 dark:border-violet-900/30 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 block p-1.5 transition-all outline-none"
+                    className={`w-full text-sm rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 block p-1.5 transition-all outline-none ${
+                      expense.descriptionModified
+                        ? 'bg-white dark:bg-gray-800 border border-violet-300 dark:border-violet-700 text-gray-900 dark:text-white ring-2 ring-violet-500/20'
+                        : 'bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400'
+                    }`}
+                    title={expense.descriptionModified ? 'Modified - will be saved' : 'Unmodified - will not be saved'}
                   />
                 </td>
                 
                 {/* Essential toggle */}
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 whitespace-nowrap">
                   <div className="flex items-center justify-center">
                     <div 
                       className="flex items-center gap-2 cursor-pointer" 
@@ -1247,7 +1391,7 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
                 </td>
                 
                 {/* Amount */}
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
                   <div className="relative inline-block w-full max-w-[120px]">
                     <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none">
                       <span className="text-violet-500 font-bold text-sm">¥</span>
@@ -1272,7 +1416,27 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
             ))}
           </tbody>
         </table>
+        </div>
       </div>
+
+      {/* Custom Scrollbar - Requirements 4.3, 4.4 */}
+      {scrollbarState.isVisible && (
+        <div
+          ref={trackRef}
+          className="relative h-2 mt-2 bg-gray-100 dark:bg-gray-800 rounded-full cursor-pointer overflow-hidden"
+          onClick={handleScrollbarClick}
+        >
+          {/* Scrollbar thumb with gradient purple/violet styling and glow effect */}
+          <div
+            className="absolute top-0 h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-600 shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 transition-shadow cursor-grab active:cursor-grabbing"
+            style={{
+              left: `${scrollbarState.left}%`,
+              width: `${scrollbarState.thumbWidth}%`,
+            }}
+            onMouseDown={handleThumbMouseDown}
+          />
+        </div>
+      )}
 
       {/* Warning for selected duplicates - Requirements 5.1, 5.3 */}
       {hasDuplicatesSelected && (
