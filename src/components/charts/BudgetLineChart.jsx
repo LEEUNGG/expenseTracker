@@ -1,6 +1,240 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Area } from 'recharts';
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { 
+  calculateOverBudgetArea, 
+  findFirstOverspendDay, 
+  calculateOverspendStats,
+  OVER_BUDGET_COLORS
+} from '../../lib/overBudgetUtils';
+
+/**
+ * SVG pattern definition for over-budget area fill.
+ * Creates a 45° diagonal stripe pattern with theme-aware colors.
+ * 
+ * @param {Object} props
+ * @param {boolean} props.isDark - Whether dark theme is active
+ * Requirements: 1.3, 1.4, 5.5
+ */
+const OverBudgetAreaPattern = ({ isDark }) => {
+  const colors = isDark ? OVER_BUDGET_COLORS.dark : OVER_BUDGET_COLORS.light;
+  
+  return (
+    <defs>
+      <pattern
+        id="overBudgetPattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <line
+          x1="0"
+          y1="0"
+          x2="0"
+          y2="8"
+          stroke={colors.patternStroke}
+          strokeWidth="2"
+          strokeOpacity={colors.patternOpacity}
+        />
+      </pattern>
+    </defs>
+  );
+};
+
+/**
+ * Custom spending line that renders with different styles based on over-budget state.
+ * Solid line for normal segments, dashed line with darker color for over-budget segments.
+ * 
+ * Requirements: 2.1, 2.2, 2.3, 2.4
+ */
+const SegmentedSpendingLine = ({ points, data, isDark }) => {
+  if (!points || points.length < 2) return null;
+  
+  const colors = isDark ? OVER_BUDGET_COLORS.dark : OVER_BUDGET_COLORS.light;
+  const segments = [];
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const currentPoint = points[i];
+    const nextPoint = points[i + 1];
+    const currentData = data[i];
+    const nextData = data[i + 1];
+    
+    // Skip if either point has null spending
+    if (currentPoint.y === null || nextPoint.y === null || 
+        currentData?.spending === null || nextData?.spending === null) {
+      continue;
+    }
+    
+    // Determine if this segment is over budget
+    // A segment is over-budget if either endpoint is over budget
+    const currentOverBudget = currentData?.spending > currentData?.budget;
+    const nextOverBudget = nextData?.spending > nextData?.budget;
+    const isOverBudgetSegment = currentOverBudget || nextOverBudget;
+    
+    segments.push({
+      x1: currentPoint.x,
+      y1: currentPoint.y,
+      x2: nextPoint.x,
+      y2: nextPoint.y,
+      isOverBudget: isOverBudgetSegment
+    });
+  }
+  
+  return (
+    <g>
+      {segments.map((segment, index) => (
+        <line
+          key={index}
+          x1={segment.x1}
+          y1={segment.y1}
+          x2={segment.x2}
+          y2={segment.y2}
+          stroke={segment.isOverBudget ? colors.lineOverspend : colors.lineNormal}
+          strokeWidth={3}
+          strokeDasharray={segment.isOverBudget ? '8 4' : 'none'}
+          strokeLinecap="round"
+        />
+      ))}
+    </g>
+  );
+};
+
+/**
+ * Enhanced Tooltip component for over-budget visualization.
+ * Shows detailed overspending information when hovering over over-budget data points.
+ * 
+ * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7
+ * 
+ * @param {Object} props
+ * @param {boolean} props.active - Whether tooltip is active
+ * @param {Array} props.payload - Recharts payload data
+ * @param {string} props.label - Current day label
+ * @param {Array} props.data - Full chart data for calculating stats
+ * @param {boolean} props.isDark - Whether dark theme is active
+ */
+const EnhancedTooltip = ({ active, payload, label, data, isDark }) => {
+  if (!active || !payload?.length) return null;
+  
+  const dayData = data.find(d => d.day === label);
+  const stats = calculateOverspendStats(data, label);
+  const isOverBudget = stats !== null;
+  
+  const typeNames = {
+    holiday: 'Holiday',
+    weekend: 'Weekend',
+    weekday: 'Workday',
+  };
+  
+  return (
+    <div className="bg-white/95 dark:bg-gray-800/95 p-3 border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-xl backdrop-blur-md min-w-[180px]">
+      {/* Header with day and adjustment badge */}
+      <p className="font-bold text-gray-900 dark:text-white mb-2 text-sm flex items-center justify-between">
+        Day {label}
+        {dayData?.hasAdjustment && (
+          <span className="px-1.5 py-0.5 bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400 text-[10px] font-bold rounded-lg ml-2">
+            Adjusted
+          </span>
+        )}
+      </p>
+      
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider font-semibold">
+        {typeNames[dayData?.dayType] || 'Unknown'}
+      </p>
+      
+      {/* Over-budget section - Requirements 3.1, 3.2, 3.3, 3.4, 3.5 */}
+      {isOverBudget && (
+        <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+          {/* OVER BUDGET label - Requirement 3.1 */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ${
+              isDark 
+                ? 'bg-red-900/50 text-red-400' 
+                : 'bg-red-100 text-red-600'
+            }`}>
+              Over Budget
+            </span>
+          </div>
+          
+          {/* Overspend amount with + prefix - Requirement 3.2 */}
+          <div className="flex items-baseline gap-1 mb-1">
+            <span className={`text-lg font-bold ${isDark ? 'text-red-400' : 'text-red-600'}`}>
+              +¥{stats.overspendAmount.toLocaleString()}
+            </span>
+            {/* Overspend percentage - Requirement 3.3 */}
+            {stats.overspendPercentage !== null && (
+              <span className={`text-xs ${isDark ? 'text-red-400/80' : 'text-red-500'}`}>
+                (+{stats.overspendPercentage.toFixed(1)}%)
+              </span>
+            )}
+          </div>
+          
+          {/* First overspend day - Requirement 3.4 */}
+          {stats.firstOverspendDay && (
+            <p className="text-[10px] text-gray-500 dark:text-gray-400">
+              Started on: Day {stats.firstOverspendDay}
+            </p>
+          )}
+          
+          {/* Average daily overspend - Requirement 3.5 */}
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+            Avg daily overspend: ¥{Math.round(stats.avgDailyOverspend).toLocaleString()}
+          </p>
+        </div>
+      )}
+      
+      {/* Standard tooltip content - Budget and Spending values - Requirements 3.6, 3.7 */}
+      <div className="space-y-2">
+        {payload
+          .filter(entry => entry.dataKey === 'budget' || entry.dataKey === 'spending')
+          .map((entry, index) => (
+            <div key={index} className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-2 h-2 rounded-full" 
+                  style={{ backgroundColor: entry.color }} 
+                />
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  {entry.name.replace('Cumulative ', '')}
+                </span>
+              </div>
+              <span 
+                className="text-sm font-bold" 
+                style={{ color: entry.color }}
+              >
+                ¥{entry.value?.toLocaleString()}
+              </span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Calculate overspending information at the latest day with spending data.
+ * Returns the overspending amount and the latest data point if spending exceeds budget.
+ * 
+ * @param {Array} data - Filtered chart data with day, budget, spending properties
+ * @returns {Object} { overspendingAmount, latestPoint, hasOverspending }
+ */
+function calculateOverspending(data) {
+  // Find the latest data point that has spending data (not null)
+  const pointsWithSpending = data.filter(d => d.spending !== null && d.spending !== undefined);
+  
+  if (pointsWithSpending.length === 0) {
+    return { overspendingAmount: 0, latestPoint: null, hasOverspending: false };
+  }
+  
+  const latestPoint = pointsWithSpending[pointsWithSpending.length - 1];
+  const overspendingAmount = latestPoint.spending - latestPoint.budget;
+  
+  return {
+    overspendingAmount: Math.max(0, overspendingAmount),
+    latestPoint,
+    hasOverspending: overspendingAmount > 0
+  };
+}
 
 // Constants for Y-axis configuration
 const Y_AXIS_WIDTH = 50;
@@ -56,14 +290,96 @@ function filterSpendingData(data, currentMonth, today = new Date()) {
   }));
 }
 
+/**
+ * First Overspend Day Marker component.
+ * Renders a red triangle warning marker on the X-axis at the first day where spending exceeds budget.
+ * Includes a tooltip that shows "First day exceeding budget" on hover.
+ * 
+ * Requirements: 4.1, 4.2, 4.3
+ * 
+ * @param {Object} props
+ * @param {number} props.x - X position offset from parent transform
+ * @param {number} props.y - Y position offset from parent transform
+ * @param {boolean} props.isDark - Whether dark theme is active
+ * @param {boolean} props.isHovered - Whether the marker is being hovered
+ * @param {Function} props.onMouseEnter - Mouse enter handler
+ * @param {Function} props.onMouseLeave - Mouse leave handler
+ */
+const FirstOverspendMarker = ({ x = 0, y = -8, isDark, isHovered, onMouseEnter, onMouseLeave }) => {
+  const colors = isDark ? OVER_BUDGET_COLORS.dark : OVER_BUDGET_COLORS.light;
+  
+  const tooltipWidth = 170;
+  const tooltipHeight = 28;
+  
+  return (
+    <g 
+      transform={`translate(${x}, ${y})`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      style={{ cursor: 'pointer' }}
+    >
+      {/* Red triangle pointing down - warning marker */}
+      <polygon
+        points="0,-6 5,4 -5,4"
+        fill={colors.warningMarker}
+        stroke={isDark ? '#1f2937' : '#ffffff'}
+        strokeWidth={1}
+        style={{
+          filter: isHovered ? 'drop-shadow(0 0 4px rgba(239, 68, 68, 0.5))' : 'none',
+          transform: isHovered ? 'scale(1.2)' : 'scale(1)',
+          transformOrigin: 'center',
+          transition: 'transform 0.15s ease-out, filter 0.15s ease-out'
+        }}
+      />
+      {/* Tooltip - Requirements 4.2 */}
+      {isHovered && (
+        <g style={{ pointerEvents: 'none' }}>
+          {/* Tooltip background */}
+          <rect
+            x={-tooltipWidth / 2}
+            y={-tooltipHeight - 16}
+            width={tooltipWidth}
+            height={tooltipHeight}
+            rx={6}
+            ry={6}
+            fill={isDark ? '#374151' : '#1f2937'}
+            opacity={0.95}
+          />
+          {/* Tooltip arrow */}
+          <polygon
+            points="0,-16 6,-16 0,-8 -6,-16"
+            fill={isDark ? '#374151' : '#1f2937'}
+            opacity={0.95}
+          />
+          {/* Tooltip text */}
+          <text
+            x={0}
+            y={-tooltipHeight / 2 - 14}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#ffffff"
+            fontSize="11"
+            fontWeight="500"
+          >
+            First day exceeding budget
+          </text>
+        </g>
+      )}
+    </g>
+  );
+};
+
 const CustomizedAxisTick = (props) => {
-  const { x, y, payload, data, isDark } = props;
+  const { x, y, payload, data, isDark, firstOverspendDay, onMarkerHover, isMarkerHovered } = props;
   const dayData = data.find(d => d.day === payload.value);
   const dayType = dayData?.dayType;
   const hasAdjustment = dayData?.hasAdjustment;
 
   const today = new Date().getDate();
   const isToday = parseInt(payload.value) === today;
+  
+  // Check if this tick is the first overspend day
+  const isFirstOverspendDay = firstOverspendDay && firstOverspendDay.day === payload.value;
 
   let circleFill = 'none';
   let circleStroke = 'none';
@@ -107,6 +423,17 @@ const CustomizedAxisTick = (props) => {
           cy={showCircle ? 6 : 6}
           r={3}
           fill={isDark ? '#c4b5fd' : '#a78bfa'}
+        />
+      )}
+      {/* First Overspend Day Marker - Requirements 4.1, 4.3 */}
+      {isFirstOverspendDay && (
+        <FirstOverspendMarker
+          x={0}
+          y={-8}
+          isDark={isDark}
+          isHovered={isMarkerHovered}
+          onMouseEnter={() => onMarkerHover && onMarkerHover(true, x)}
+          onMouseLeave={() => onMarkerHover && onMarkerHover(false, null)}
         />
       )}
       <text
@@ -155,6 +482,9 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
   const containerRef = useRef(null);
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  
+  // State for first overspend marker tooltip
+  const [markerHoverState, setMarkerHoverState] = useState({ isHovered: false, x: null });
 
   // Y-axis domain
   const yDomain = useMemo(() => [0, maxSpending > 0 ? maxSpending : 1000], [maxSpending]);
@@ -163,6 +493,53 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
   const filteredData = useMemo(() => {
     return filterSpendingData(data, currentMonth);
   }, [data, currentMonth]);
+
+  // Calculate overspending information at the latest day
+  const overspendingInfo = useMemo(() => {
+    return calculateOverspending(filteredData);
+  }, [filteredData]);
+
+  // Calculate over-budget area data for visualization
+  const overBudgetAreaData = useMemo(() => {
+    return calculateOverBudgetArea(filteredData);
+  }, [filteredData]);
+
+  // Find first overspend day for marker
+  const firstOverspendDay = useMemo(() => {
+    return findFirstOverspendDay(filteredData);
+  }, [filteredData]);
+
+  // Check if there's any over-budget data to display
+  const hasOverBudgetArea = useMemo(() => {
+    return overBudgetAreaData.some(d => d.overBudget !== null && d.overBudget > 0);
+  }, [overBudgetAreaData]);
+
+  // Handler for first overspend marker hover
+  const handleMarkerHover = useCallback((isHovered, x) => {
+    setMarkerHoverState({ isHovered, x });
+  }, []);
+
+  // Prepare chart data with over-budget values merged
+  // For the stacked area approach: we use budget as base and overBudget as the additional amount
+  const chartDataWithOverBudget = useMemo(() => {
+    return filteredData.map((point, index) => {
+      const overBudgetValue = overBudgetAreaData[index]?.overBudget ?? null;
+      const isOverBudget = point.spending !== null && point.spending > point.budget;
+      
+      return {
+        ...point,
+        overBudget: overBudgetValue,
+        // For stacked area: budget is the base, overBudgetDiff is the amount above budget
+        // This creates a stacked effect where the pattern only fills the difference
+        overBudgetDiff: isOverBudget ? overBudgetValue : 0,
+        // Budget value for the base area (transparent, just for stacking)
+        budgetBase: point.budget
+      };
+    });
+  }, [filteredData, overBudgetAreaData]);
+
+  // Get theme colors
+  const overBudgetColors = isDark ? OVER_BUDGET_COLORS.dark : OVER_BUDGET_COLORS.light;
 
   const handleClick = (e) => {
     if (e && e.activeLabel && onBudgetClick) {
@@ -322,14 +699,22 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
           `}} />
           <div style={{ minWidth: `${filteredData.length * 60}px`, height: `${CHART_HEIGHT}px` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredData} margin={CHART_MARGIN} onClick={handleClick} style={{ cursor: 'pointer' }}>
+              <LineChart data={chartDataWithOverBudget} margin={CHART_MARGIN} onClick={handleClick} style={{ cursor: 'pointer' }}>
+                {/* SVG Pattern for over-budget area fill */}
+                <OverBudgetAreaPattern isDark={isDark} />
                 <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-gray-200 dark:stroke-gray-800" />
                 <XAxis
                   dataKey="day"
                   axisLine={false}
                   tickLine={false}
                   interval={0}
-                  tick={<CustomizedAxisTick data={filteredData} isDark={isDark} />}
+                  tick={<CustomizedAxisTick 
+                    data={filteredData} 
+                    isDark={isDark} 
+                    firstOverspendDay={firstOverspendDay}
+                    onMarkerHover={handleMarkerHover}
+                    isMarkerHovered={markerHoverState.isHovered}
+                  />}
                   height={50}
                 />
                 {/* Task 1.3: Hide native Y-Axis */}
@@ -338,40 +723,45 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
                   hide={true}
                   width={0}
                 />
+                {/* Over-budget area fill using stacked areas - Requirements 1.1, 1.2, 1.5
+                    The stacked approach:
+                    1. budgetBase area (transparent) provides the baseline up to budget
+                    2. overBudgetDiff area (with pattern) stacks on top, showing only the difference
+                    This ensures only the region where spending > budget is filled with the pattern */}
+                {hasOverBudgetArea && (
+                  <>
+                    {/* Invisible base area up to budget line - provides stacking baseline */}
+                    <Area
+                      type="monotone"
+                      dataKey="budgetBase"
+                      stackId="overbudget"
+                      stroke="none"
+                      fill="transparent"
+                      fillOpacity={0}
+                      isAnimationActive={false}
+                    />
+                    {/* Over-budget difference area with diagonal stripe pattern */}
+                    <Area
+                      type="monotone"
+                      dataKey="overBudgetDiff"
+                      stackId="overbudget"
+                      stroke="none"
+                      fill="url(#overBudgetPattern)"
+                      fillOpacity={1}
+                      isAnimationActive={false}
+                    />
+                  </>
+                )}
                 <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      const dayData = filteredData.find(d => d.day === label);
-                      const typeNames = {
-                        holiday: 'Holiday',
-                        weekend: 'Weekend',
-                        weekday: 'Workday',
-                      };
-                      return (
-                        <div className="bg-white/95 dark:bg-gray-800/95 p-3 border border-gray-200 dark:border-gray-700/50 rounded-2xl shadow-xl backdrop-blur-md min-w-[160px]">
-                          <p className="font-bold text-gray-900 dark:text-white mb-2 text-sm flex items-center justify-between">
-                            Day {label}
-                            {dayData?.hasAdjustment && (
-                              <span className="px-1.5 py-0.5 bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400 text-[10px] font-bold rounded-lg ml-2">Adjusted</span>
-                            )}
-                          </p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider font-semibold">{typeNames[dayData?.dayType] || 'Unknown'}</p>
-                          <div className="space-y-2">
-                            {payload.map((entry, index) => (
-                              <div key={index} className="flex items-center justify-between gap-4">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                                  <span className="text-xs text-gray-600 dark:text-gray-300">{entry.name.replace('Cumulative ', '')}</span>
-                                </div>
-                                <span className="text-sm font-bold" style={{ color: entry.color }}>¥{entry.value.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
+                  content={({ active, payload, label }) => (
+                    <EnhancedTooltip
+                      active={active}
+                      payload={payload}
+                      label={label}
+                      data={chartDataWithOverBudget}
+                      isDark={isDark}
+                    />
+                  )}
                 />
                 <Line
                   type="monotone"
@@ -385,12 +775,94 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
                 <Line
                   type="monotone"
                   dataKey="spending"
-                  stroke="#ef4444"
+                  stroke={overBudgetColors.lineNormal}
                   strokeWidth={3}
                   dot={false}
-                  activeDot={{ r: 6, stroke: '#ef4444', strokeWidth: 2, fill: '#fff' }}
+                  activeDot={{ r: 6, stroke: overBudgetColors.lineNormal, strokeWidth: 2, fill: '#fff' }}
                   name="Cumulative Spending"
+                  // Use custom line rendering for segmented styles
+                  // The actual segmented rendering is handled by the custom shape
+                  {...(hasOverBudgetArea && {
+                    stroke: 'transparent',
+                    // Custom line component for segmented styling
+                  })}
                 />
+                {/* Custom segmented spending line for over-budget visualization */}
+                {hasOverBudgetArea && (
+                  <Line
+                    type="monotone"
+                    dataKey="spending"
+                    stroke="transparent"
+                    strokeWidth={0}
+                    dot={false}
+                    activeDot={false}
+                    isAnimationActive={false}
+                    // Custom shape to render segmented line
+                    // eslint-disable-next-line react/no-unstable-nested-components
+                    shape={(props) => (
+                      <SegmentedSpendingLine 
+                        points={props.points} 
+                        data={chartDataWithOverBudget}
+                        isDark={isDark}
+                      />
+                    )}
+                  />
+                )}
+                {/* Overspending indicator - dots on the lines and badge */}
+                {overspendingInfo.hasOverspending && overspendingInfo.latestPoint && (
+                  <>
+                    {/* Red dot on spending line with badge */}
+                    <ReferenceDot
+                      x={overspendingInfo.latestPoint.day}
+                      y={overspendingInfo.latestPoint.spending}
+                      r={6}
+                      fill={isDark ? '#f87171' : '#ef4444'}
+                      stroke="#fff"
+                      strokeWidth={2}
+                      label={({ viewBox }) => {
+                        const amountText = `+¥${overspendingInfo.overspendingAmount.toLocaleString()}`;
+                        const badgeWidth = amountText.length * 9 + 20;
+                        const badgeHeight = 26;
+                        
+                        return (
+                          <g>
+                            {/* Badge background */}
+                            <rect
+                              x={viewBox.x + 14}
+                              y={viewBox.y - badgeHeight / 2}
+                              width={badgeWidth}
+                              height={badgeHeight}
+                              rx={badgeHeight / 2}
+                              ry={badgeHeight / 2}
+                              fill={isDark ? '#dc2626' : '#ef4444'}
+                            />
+                            {/* Badge text */}
+                            <text
+                              x={viewBox.x + 14 + badgeWidth / 2}
+                              y={viewBox.y + 1}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fill="#ffffff"
+                              fontSize="13"
+                              fontWeight="700"
+                            >
+                              {amountText}
+                            </text>
+                          </g>
+                        );
+                      }}
+                    />
+                    {/* Green dot on budget line */}
+                    <ReferenceDot
+                      x={overspendingInfo.latestPoint.day}
+                      y={overspendingInfo.latestPoint.budget}
+                      r={6}
+                      fill={isDark ? '#34d399' : '#10b981'}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                  </>
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -422,4 +894,14 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
 
 // Export utility functions for testing
 // eslint-disable-next-line react-refresh/only-export-components
-export { calculateYAxisTicks, calculateTickPosition, filterSpendingData };
+export { 
+  calculateYAxisTicks, 
+  calculateTickPosition, 
+  filterSpendingData, 
+  calculateOverspending,
+  OVER_BUDGET_COLORS,
+  OverBudgetAreaPattern,
+  SegmentedSpendingLine,
+  EnhancedTooltip,
+  FirstOverspendMarker
+};
