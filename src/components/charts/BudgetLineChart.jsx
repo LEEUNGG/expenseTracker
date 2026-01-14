@@ -187,25 +187,40 @@ const EnhancedTooltip = ({ active, payload, label, data, isDark }) => {
       <div className="space-y-2">
         {payload
           .filter(entry => entry.dataKey === 'budget' || entry.dataKey === 'spending')
-          .map((entry, index) => (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-2 h-2 rounded-full" 
-                  style={{ backgroundColor: entry.color }} 
-                />
-                <span className="text-xs text-gray-600 dark:text-gray-300">
-                  {entry.name.replace('Cumulative ', '')}
+          // Deduplicate spending entries (there may be multiple due to segmented line rendering)
+          .filter((entry, index, arr) => {
+            if (entry.dataKey === 'spending') {
+              // Only keep the first spending entry
+              return arr.findIndex(e => e.dataKey === 'spending') === index;
+            }
+            return true;
+          })
+          .map((entry, index) => {
+            // Determine the correct color for spending (may be transparent due to segmented rendering)
+            const displayColor = entry.dataKey === 'spending' && entry.color === 'transparent'
+              ? (isDark ? '#f87171' : '#ef4444')
+              : entry.color;
+            
+            return (
+              <div key={index} className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: displayColor }} 
+                  />
+                  <span className="text-xs text-gray-600 dark:text-gray-300">
+                    {entry.name.replace('Cumulative ', '')}
+                  </span>
+                </div>
+                <span 
+                  className="text-sm font-bold" 
+                  style={{ color: displayColor }}
+                >
+                  ¥{entry.value?.toLocaleString()}
                 </span>
               </div>
-              <span 
-                className="text-sm font-bold" 
-                style={{ color: entry.color }}
-              >
-                ¥{entry.value?.toLocaleString()}
-              </span>
-            </div>
-          ))}
+            );
+          })}
       </div>
     </div>
   );
