@@ -1,5 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Area } from 'recharts';
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { 
   calculateOverBudgetArea, 
@@ -493,7 +493,7 @@ const StickyYAxis = ({ domain, height, isDark, margin }) => {
   );
 };
 
-export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth }) {
+const BudgetLineChart = memo(function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth }) {
   const containerRef = useRef(null);
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -583,6 +583,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
 
   const [scrollbarState, setScrollbarState] = useState({ left: 0, thumbWidth: 0, isVisible: false });
   const trackRef = useRef(null);
+  const scrollbarRaf = useRef(null);
   const isDragging = useRef(false);
   const startX = useRef(0);
   const startScrollLeft = useRef(0);
@@ -595,7 +596,17 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
       const left = scrollWidth > clientWidth
         ? (scrollLeft / (scrollWidth - clientWidth)) * (100 - thumbWidth)
         : 0;
-      setScrollbarState({ left, thumbWidth, isVisible });
+      if (scrollbarRaf.current) {
+        cancelAnimationFrame(scrollbarRaf.current);
+      }
+      scrollbarRaf.current = requestAnimationFrame(() => {
+        setScrollbarState(prev => {
+          if (prev.left === left && prev.thumbWidth === thumbWidth && prev.isVisible === isVisible) {
+            return prev;
+          }
+          return { left, thumbWidth, isVisible };
+        });
+      });
     }
   }, []);
 
@@ -664,7 +675,19 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
         observer.disconnect();
       };
     }
-  }, [updateScrollbar, filteredData.length, handleMouseMove]);
+  }, [updateScrollbar, handleMouseMove]);
+
+  useEffect(() => {
+    updateScrollbar();
+  }, [updateScrollbar, filteredData.length]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollbarRaf.current) {
+        cancelAnimationFrame(scrollbarRaf.current);
+      }
+    };
+  }, []);
 
   const handleScrollbarClick = (e) => {
     if (isDragging.current) return;
@@ -786,6 +809,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
                   dot={false}
                   activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2, fill: '#fff' }}
                   name="Cumulative Budget"
+                  isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
@@ -801,6 +825,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
                     stroke: 'transparent',
                     // Custom line component for segmented styling
                   })}
+                  isAnimationActive={false}
                 />
                 {/* Custom segmented spending line for over-budget visualization */}
                 {hasOverBudgetArea && (
@@ -905,7 +930,7 @@ export function BudgetLineChart({ data, maxSpending, onBudgetClick, currentMonth
       )}
     </div>
   );
-}
+});
 
 // Export utility functions for testing
 // eslint-disable-next-line react-refresh/only-export-components
@@ -918,5 +943,6 @@ export {
   OverBudgetAreaPattern,
   SegmentedSpendingLine,
   EnhancedTooltip,
-  FirstOverspendMarker
+  FirstOverspendMarker,
+  BudgetLineChart
 };

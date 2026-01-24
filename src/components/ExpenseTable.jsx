@@ -15,6 +15,8 @@ export function ExpenseTable({
     currentMonth,
     onAIEntry
 }) {
+    const categoryById = useMemo(() => new Map(categories.map(cat => [cat.id, cat])), [categories]);
+
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [newExpense, setNewExpense] = useState({
@@ -113,8 +115,8 @@ export function ExpenseTable({
     const dayFilteredExpenses = useMemo(() => {
         if (selectedDay === null) return allExpenses;
         return allExpenses.filter(expense => {
-            const expenseDate = new Date(expense.transaction_datetime);
-            return expenseDate.getDate() === selectedDay;
+            const day = expense._day ?? new Date(expense.transaction_datetime || expense.date).getDate();
+            return day === selectedDay;
         });
     }, [allExpenses, selectedDay]);
 
@@ -124,7 +126,8 @@ export function ExpenseTable({
         
         const query = searchQuery.trim();
         return dayFilteredExpenses.filter(expense => {
-            const amount = parseFloat(expense.amount).toFixed(2);
+            const amountValue = Number.isFinite(expense._amount) ? expense._amount : parseFloat(expense.amount);
+            const amount = amountValue.toFixed(2);
             return amount.includes(query);
         });
     }, [dayFilteredExpenses, searchQuery, isSearchMode]);
@@ -137,8 +140,8 @@ export function ExpenseTable({
         }
 
         return [...filteredExpenses].sort((a, b) => {
-            const amountA = parseFloat(a.amount);
-            const amountB = parseFloat(b.amount);
+            const amountA = Number.isFinite(a._amount) ? a._amount : parseFloat(a.amount);
+            const amountB = Number.isFinite(b._amount) ? b._amount : parseFloat(b.amount);
             return amountSortDirection === 'asc'
                 ? amountA - amountB
                 : amountB - amountA;
@@ -149,6 +152,7 @@ export function ExpenseTable({
     const containerRef = useRef(null);
     const trackRef = useRef(null);
     const [scrollbarState, setScrollbarState] = useState({ left: 0, thumbWidth: 0, isVisible: false });
+    const scrollbarRaf = useRef(null);
     const isDragging = useRef(false);
     const startX = useRef(0);
     const startScrollLeft = useRef(0);
@@ -161,7 +165,17 @@ export function ExpenseTable({
             const left = scrollWidth > clientWidth
                 ? (scrollLeft / (scrollWidth - clientWidth)) * (100 - thumbWidth)
                 : 0;
-            setScrollbarState({ left, thumbWidth, isVisible });
+            if (scrollbarRaf.current) {
+                cancelAnimationFrame(scrollbarRaf.current);
+            }
+            scrollbarRaf.current = requestAnimationFrame(() => {
+                setScrollbarState(prev => {
+                    if (prev.left === left && prev.thumbWidth === thumbWidth && prev.isVisible === isVisible) {
+                        return prev;
+                    }
+                    return { left, thumbWidth, isVisible };
+                });
+            });
         }
     }, []);
 
@@ -232,7 +246,19 @@ export function ExpenseTable({
                 observer.disconnect();
             };
         }
-    }, [updateScrollbar, expenses, isAdding, editingId, handleMouseMove]);
+    }, [updateScrollbar, handleMouseMove]);
+
+    useEffect(() => {
+        updateScrollbar();
+    }, [updateScrollbar, sortedExpenses.length, isAdding, editingId]);
+
+    useEffect(() => {
+        return () => {
+            if (scrollbarRaf.current) {
+                cancelAnimationFrame(scrollbarRaf.current);
+            }
+        };
+    }, []);
 
     const handleScrollbarClick = (e) => {
         if (isDragging.current) return;
@@ -311,8 +337,8 @@ export function ExpenseTable({
     const handleEditClick = (expense) => {
         setEditingId(expense.id);
         // Extract date from transaction_datetime
-        const datetime = expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date);
-        const dateStr = datetime.toISOString().split('T')[0];
+        const datetime = expense._dateObj || (expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date));
+        const dateStr = expense._dateISO || datetime.toISOString().split('T')[0];
         setEditingExpense({
             date: dateStr,
             category_id: expense.category_id,
@@ -364,9 +390,7 @@ export function ExpenseTable({
         }
     };
 
-    const getCategory = (categoryId) => {
-        return categories.find(c => c.id === categoryId);
-    };
+    const getCategory = useCallback((categoryId) => categoryById.get(categoryId), [categoryById]);
 
     return (
         <div className="w-full">
@@ -672,7 +696,7 @@ export function ExpenseTable({
                                             ) : (
                                                 <span className="font-medium text-gray-900 dark:text-white whitespace-nowrap">
                                                     {(() => {
-                                                        const datetime = expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date);
+                                                        const datetime = expense._dateObj || (expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date));
                                                         const day = datetime.getDate();
                                                         // Get ordinal suffix for day (1st, 2nd, 3rd, 4th, etc.)
                                                         const getOrdinalSuffix = (n) => {
@@ -775,11 +799,11 @@ export function ExpenseTable({
                                             ) : (
                                                 <span className={cn(
                                                     "font-medium",
-                                                    searchQuery && parseFloat(expense.amount).toFixed(2).includes(searchQuery.trim())
+                                                    searchQuery && (Number.isFinite(expense._amount) ? expense._amount : parseFloat(expense.amount)).toFixed(2).includes(searchQuery.trim())
                                                         ? "text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-2 py-0.5 rounded-lg"
                                                         : "text-gray-900 dark:text-white"
                                                 )}>
-                                                    {parseFloat(expense.amount).toFixed(2)}
+                                                    {(Number.isFinite(expense._amount) ? expense._amount : parseFloat(expense.amount)).toFixed(2)}
                                                 </span>
                                             )}
                                         </td>

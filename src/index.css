@@ -8,6 +8,34 @@
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Performance-lite mode: reduces expensive effects on low-end devices */
+.perf-lite *, .perf-lite *::before, .perf-lite *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+.perf-lite .glass-panel {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.perf-lite.dark .glass-panel {
+    background-color: rgba(17, 24, 39, 0.95) !important;
+}
+
 /* Custom premium aesthetic additions */
 .glass-panel {
     @apply bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl border border-white/20 dark:border-gray-700/50 shadow-lg;

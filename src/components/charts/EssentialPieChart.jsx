@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, Sector } from 'recharts';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const COLORS = ['#10b981', '#ef4444'];
 
-export function EssentialPieChart({ data }) {
+const EssentialPieChart = memo(function EssentialPieChart({ data }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -66,6 +66,7 @@ export function EssentialPieChart({ data }) {
             onMouseEnter={onPieEnter}
             onMouseLeave={onPieLeave}
             label={false}
+            isAnimationActive={false}
           >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -96,4 +97,6 @@ export function EssentialPieChart({ data }) {
       </ResponsiveContainer>
     </div>
   );
-}
+});
+
+export { EssentialPieChart };

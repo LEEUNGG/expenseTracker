@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, Sector } from 'recharts';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -7,7 +7,7 @@ const COLORS = [
   '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
 ];
 
-export function CategoryPieChart({ data }) {
+const CategoryPieChart = memo(function CategoryPieChart({ data }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -69,6 +69,7 @@ export function CategoryPieChart({ data }) {
             onMouseEnter={onPieEnter}
             onMouseLeave={onPieLeave}
             label={false}
+            isAnimationActive={false}
           >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
@@ -99,4 +100,6 @@ export function CategoryPieChart({ data }) {
       </ResponsiveContainer>
     </div>
   );
-}
+});
+
+export { CategoryPieChart };

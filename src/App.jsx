@@ -32,6 +32,28 @@ function App() {
   });
   const { addToast } = useToast();
 
+  const normalizeExpenses = useCallback((data) => {
+    if (!Array.isArray(data)) return [];
+    return data.map(expense => {
+      const datetime = expense.transaction_datetime || expense.date;
+      const dateObj = datetime ? new Date(datetime) : null;
+      const amount = typeof expense.amount === 'number' ? expense.amount : parseFloat(expense.amount);
+
+      return {
+        ...expense,
+        _dateObj: dateObj,
+        _year: dateObj ? dateObj.getFullYear() : null,
+        _month: dateObj ? dateObj.getMonth() : null,
+        _day: dateObj ? dateObj.getDate() : null,
+        _dateISO: dateObj ? dateObj.toISOString().split('T')[0] : null,
+        _amount: Number.isFinite(amount) ? amount : 0,
+      };
+    });
+  }, []);
+
+  const activeCategories = useMemo(() => categories.filter(c => !c.is_deleted), [categories]);
+  const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
+
   // Helper function to show confirmation modal
   const showConfirmModal = useCallback(({ title, message, onConfirm }) => {
     setConfirmModal({
@@ -54,11 +76,9 @@ function App() {
   const currentMonthNum = currentMonth.getMonth() + 1;
 
   const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => {
-      const expenseDate = new Date(expense.transaction_datetime);
-      return expenseDate.getFullYear() === currentYear &&
-        expenseDate.getMonth() === currentMonthNum - 1;
-    });
+    return expenses.filter(expense => (
+      expense._year === currentYear && expense._month === currentMonthNum - 1
+    ));
   }, [expenses, currentYear, currentMonthNum]);
 
   const chartData = useMemo(() => {
@@ -71,8 +91,8 @@ function App() {
 
     const dailySpending = new Array(daysInMonth).fill(0);
     filteredExpenses.forEach(expense => {
-      const day = new Date(expense.transaction_datetime).getDate() - 1;
-      dailySpending[day] += parseFloat(expense.amount);
+      const day = (expense._day ?? new Date(expense.transaction_datetime).getDate()) - 1;
+      dailySpending[day] += expense._amount;
     });
 
     let accumulativeSpending = 0;
@@ -103,22 +123,26 @@ function App() {
   }, [currentYear, currentMonthNum, filteredExpenses, budgetAdjustments, holidays]);
 
   const categoryChartData = useMemo(() => {
-    const categoryTotals = {};
-    filteredExpenses.forEach(expense => {
-      const category = categories.find(c => c.id === expense.category_id);
-      const categoryName = category ? `${category.emoji} ${category.name}` : 'Unknown';
-      categoryTotals[categoryName] = (categoryTotals[categoryName] || 0) + parseFloat(expense.amount);
-    });
+    const categoryTotals = new Map();
 
-    return Object.entries(categoryTotals).map(([name, value]) => {
-      const category = categories.find(c => `${c.emoji} ${c.name}` === name);
-      return {
-        name,
-        value: Math.round(value * 100) / 100,
+    filteredExpenses.forEach(expense => {
+      const category = categoryById.get(expense.category_id);
+      const key = category ? category.id : 'unknown';
+      const current = categoryTotals.get(key) || {
+        name: category ? `${category.emoji} ${category.name}` : 'Unknown',
+        value: 0,
         color: category ? category.color : '#3b82f6',
       };
+
+      current.value += expense._amount;
+      categoryTotals.set(key, current);
     });
-  }, [filteredExpenses, categories]);
+
+    return Array.from(categoryTotals.values()).map(item => ({
+      ...item,
+      value: Math.round(item.value * 100) / 100,
+    }));
+  }, [filteredExpenses, categoryById]);
 
   const essentialChartData = useMemo(() => {
     let essentialTotal = 0;
@@ -126,9 +150,9 @@ function App() {
 
     filteredExpenses.forEach(expense => {
       if (expense.is_essential) {
-        essentialTotal += parseFloat(expense.amount);
+        essentialTotal += expense._amount;
       } else {
-        nonEssentialTotal += parseFloat(expense.amount);
+        nonEssentialTotal += expense._amount;
       }
     });
 
@@ -168,7 +192,7 @@ function App() {
           BudgetService.getBudgetAdjustments(currentYear, currentMonthNum),
           BudgetService.getHolidays(currentYear, currentMonthNum),
         ]);
-        setExpenses(expensesData || []);
+        setExpenses(normalizeExpenses(expensesData || []));
         setBudgetAdjustments(budgetData || []);
         setHolidays(holidaysData || []);
       } catch (err) {
@@ -179,20 +203,20 @@ function App() {
       }
     };
     fetchData();
-  }, [currentYear, currentMonthNum]);
+  }, [currentYear, currentMonthNum, normalizeExpenses]);
 
   // 刷新当月消费数据
   const refreshExpenses = useCallback(async () => {
     try {
       const data = await ExpenseService.getExpensesByMonth(currentYear, currentMonthNum);
-      setExpenses(data || []);
+      setExpenses(normalizeExpenses(data || []));
     } catch (err) {
       console.error('Failed to refresh expense data:', err);
     }
-  }, [currentYear, currentMonthNum]);
+  }, [currentYear, currentMonthNum, normalizeExpenses]);
 
   // Handle manual refresh data button click
-  const handleRefreshData = async () => {
+  const handleRefreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -201,7 +225,7 @@ function App() {
         BudgetService.getBudgetAdjustments(currentYear, currentMonthNum),
         BudgetService.getHolidays(currentYear, currentMonthNum),
       ]);
-      setExpenses(expensesData || []);
+      setExpenses(normalizeExpenses(expensesData || []));
       setBudgetAdjustments(budgetData || []);
       setHolidays(holidaysData || []);
       addToast('Data refreshed successfully');
@@ -211,9 +235,9 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [addToast, currentMonthNum, currentYear, normalizeExpenses]);
 
-  const handlePreviousMonth = () => {
+  const handlePreviousMonth = useCallback(() => {
     const minMonth = new Date(2026, 0, 1);
     const newMonth = new Date(currentMonth);
     newMonth.setMonth(newMonth.getMonth() - 1);
@@ -222,9 +246,9 @@ function App() {
       setCurrentMonth(newMonth);
       setSelectedExpenseIds([]);
     }
-  };
+  }, [currentMonth]);
 
-  const handleNextMonth = () => {
+  const handleNextMonth = useCallback(() => {
     const maxMonth = new Date();
     const newMonth = new Date(currentMonth);
     newMonth.setMonth(newMonth.getMonth() + 1);
@@ -233,9 +257,9 @@ function App() {
       setCurrentMonth(newMonth);
       setSelectedExpenseIds([]);
     }
-  };
+  }, [currentMonth]);
 
-  const handleCreateExpense = async (expense) => {
+  const handleCreateExpense = useCallback(async (expense) => {
     try {
       await ExpenseService.createExpense(expense);
       await refreshExpenses();
@@ -250,9 +274,9 @@ function App() {
       });
       addToast('Failed to create expense, please try again', 'error');
     }
-  };
+  }, [addToast, refreshExpenses]);
 
-  const handleUpdateExpense = async (id, updates) => {
+  const handleUpdateExpense = useCallback(async (id, updates) => {
     try {
       await ExpenseService.updateExpense(id, updates);
       await refreshExpenses();
@@ -261,9 +285,9 @@ function App() {
       console.error('Failed to update expense:', err);
       addToast('Failed to update expense, please try again', 'error');
     }
-  };
+  }, [addToast, refreshExpenses]);
 
-  const handleDeleteExpense = async (id) => {
+  const handleDeleteExpense = useCallback(async (id) => {
     showConfirmModal({
       title: 'Delete Expense',
       message: 'Are you sure you want to delete this expense record?',
@@ -279,9 +303,9 @@ function App() {
         }
       },
     });
-  };
+  }, [addToast, refreshExpenses, showConfirmModal]);
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = useCallback(async () => {
     const count = selectedExpenseIds.length;
     showConfirmModal({
       title: 'Delete Multiple Expenses',
@@ -298,9 +322,9 @@ function App() {
         }
       },
     });
-  };
+  }, [addToast, refreshExpenses, selectedExpenseIds, showConfirmModal]);
 
-  const handleAIConfirm = async (items) => {
+  const handleAIConfirm = useCallback(async (items) => {
     try {
       for (const item of items) {
         await ExpenseService.createExpense({
@@ -315,9 +339,9 @@ function App() {
       console.error('AI entry failed:', err);
       addToast('AI entry failed, please try again', 'error');
     }
-  };
+  }, [addToast, refreshExpenses]);
 
-  const handleBudgetAdjust = async (day, currentBudget) => {
+  const handleBudgetAdjust = useCallback(async (day, currentBudget) => {
     const newBudget = window.prompt(`Adjust daily budget for Day ${day}?`, currentBudget);
     if (newBudget !== null && !isNaN(parseFloat(newBudget))) {
       const date = new Date(currentYear, currentMonthNum - 1, day);
@@ -342,9 +366,9 @@ function App() {
         addToast('Failed to update budget', 'error');
       }
     }
-  };
+  }, [addToast, currentMonthNum, currentYear]);
 
-  const handleCategoryUpdate = async (id, updates) => {
+  const handleCategoryUpdate = useCallback(async (id, updates) => {
     try {
       await CategoryService.updateCategory(id, updates);
       const data = await CategoryService.getAllCategories();
@@ -354,9 +378,9 @@ function App() {
       console.error('Failed to update category:', err);
       addToast('Failed to update category, please try again', 'error');
     }
-  };
+  }, [addToast]);
 
-  const handleCategoryDelete = async (id) => {
+  const handleCategoryDelete = useCallback(async (id) => {
     try {
       await CategoryService.deleteCategory(id);
       const data = await CategoryService.getAllCategories();
@@ -366,9 +390,9 @@ function App() {
       console.error('Failed to delete category:', err);
       addToast('Failed to delete category, please try again', 'error');
     }
-  };
+  }, [addToast]);
 
-  const handleCategoryCreate = async (category) => {
+  const handleCategoryCreate = useCallback(async (category) => {
     try {
       await CategoryService.createCategory(category);
       const data = await CategoryService.getAllCategories();
@@ -378,14 +402,14 @@ function App() {
       console.error('Failed to create category:', err);
       addToast('Failed to create category, please try again', 'error');
     }
-  };
+  }, [addToast]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        categories={categories.filter(c => !c.is_deleted)}
+        categories={activeCategories}
         onCategoryUpdate={handleCategoryUpdate}
         onCategoryDelete={handleCategoryDelete}
         onCategoryCreate={handleCategoryCreate}
@@ -496,7 +520,7 @@ function App() {
                   <ExpenseTable
                     expenses={filteredExpenses}
                     allExpenses={filteredExpenses}
-                    categories={categories.filter(c => !c.is_deleted)}
+                    categories={activeCategories}
                     currentMonth={currentMonth}
                     onCreate={handleCreateExpense}
                     onUpdate={handleUpdateExpense}
@@ -517,7 +541,7 @@ function App() {
         isOpen={isAIModalOpen}
         onClose={() => setIsAIModalOpen(false)}
         onConfirm={handleAIConfirm}
-        categories={categories.filter(c => !c.is_deleted)}
+        categories={activeCategories}
         currentMonth={currentMonth}
       />
 
