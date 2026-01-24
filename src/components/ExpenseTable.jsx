@@ -1,6 +1,27 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Pencil, Trash2, Plus, Check, X, Sparkles, ArrowUp, ArrowDown, ArrowUpDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { extractDateTimeFromTimestamp } from '../lib/deduplicationService';
+
+const getExpenseDateStr = (expense) => {
+    if (expense?._dateISO) return expense._dateISO;
+    if (expense?.transaction_datetime && typeof expense.transaction_datetime === 'string') {
+        const extracted = extractDateTimeFromTimestamp(expense.transaction_datetime);
+        if (extracted?.date) return extracted.date;
+    }
+    return expense?.date || '';
+};
+
+const getExpenseDay = (expense) => {
+    if (Number.isFinite(expense?._day)) return expense._day;
+    const dateStr = getExpenseDateStr(expense);
+    if (dateStr) {
+        const dayPart = parseInt(dateStr.split('-')[2], 10);
+        if (Number.isFinite(dayPart)) return dayPart;
+    }
+    const datetime = expense?.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense?.date);
+    return Number.isNaN(datetime.getTime()) ? null : datetime.getDate();
+};
 
 export function ExpenseTable({
     expenses,
@@ -115,7 +136,7 @@ export function ExpenseTable({
     const dayFilteredExpenses = useMemo(() => {
         if (selectedDay === null) return allExpenses;
         return allExpenses.filter(expense => {
-            const day = expense._day ?? new Date(expense.transaction_datetime || expense.date).getDate();
+            const day = getExpenseDay(expense);
             return day === selectedDay;
         });
     }, [allExpenses, selectedDay]);
@@ -147,6 +168,23 @@ export function ExpenseTable({
                 : amountB - amountA;
         });
     }, [filteredExpenses, amountSortDirection]);
+
+    const visibleExpenses = useMemo(() => sortedExpenses || [], [sortedExpenses]);
+    const visibleIds = useMemo(() => visibleExpenses.map(expense => expense.id), [visibleExpenses]);
+    const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+    const allVisibleSelected = useMemo(() => {
+        if (visibleIds.length === 0) return false;
+        return visibleIds.every(id => selectedIdSet.has(id));
+    }, [visibleIds, selectedIdSet]);
+
+    useEffect(() => {
+        if (selectedIds.length === 0) return;
+        const visibleIdSet = new Set(visibleIds);
+        const nextSelected = selectedIds.filter(id => visibleIdSet.has(id));
+        if (nextSelected.length !== selectedIds.length) {
+            onSelectionChange(nextSelected);
+        }
+    }, [selectedIds, visibleIds, onSelectionChange]);
 
     // Custom Scrollbar Logic
     const containerRef = useRef(null);
@@ -277,17 +315,26 @@ export function ExpenseTable({
         }
     };
 
+    const formatLocalDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const resetNewExpense = () => {
         const today = new Date();
         const year = currentMonth.getFullYear();
         const month = currentMonth.getMonth();
 
         let dateValue;
-        if (today.getFullYear() === year && today.getMonth() === month) {
-            dateValue = today.toISOString().split('T')[0];
+        if (selectedDay !== null) {
+            dateValue = formatLocalDate(new Date(year, month, selectedDay));
+        } else if (today.getFullYear() === year && today.getMonth() === month) {
+            dateValue = formatLocalDate(today);
         } else {
-            // First day of that month
-            dateValue = new Date(year, month, 1).toISOString().split('T')[0];
+            const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+            dateValue = formatLocalDate(new Date(year, month, lastDayOfMonth));
         }
 
         // Use the first category from the list as default
@@ -336,9 +383,7 @@ export function ExpenseTable({
 
     const handleEditClick = (expense) => {
         setEditingId(expense.id);
-        // Extract date from transaction_datetime
-        const datetime = expense._dateObj || (expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date));
-        const dateStr = expense._dateISO || datetime.toISOString().split('T')[0];
+        const dateStr = getExpenseDateStr(expense);
         setEditingExpense({
             date: dateStr,
             category_id: expense.category_id,
@@ -376,7 +421,7 @@ export function ExpenseTable({
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            onSelectionChange(expenses.map(ex => ex.id));
+            onSelectionChange(visibleIds);
         } else {
             onSelectionChange([]);
         }
@@ -538,13 +583,13 @@ export function ExpenseTable({
                     <thead className="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-gray-800 dark:text-gray-400">
                         <tr>
                             <th scope="col" className="p-4">
-                                {expenses.length > 0 && (
+                                {visibleIds.length > 0 && (
                                     <div className="flex items-center">
                                         <input
                                             type="checkbox"
                                             className="w-4 h-4 text-violet-600 bg-gray-100 border-gray-300 rounded focus:ring-violet-500 dark:focus:ring-violet-600 dark:ring-offset-gray-800 dark:focus:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                                             onChange={handleSelectAll}
-                                            checked={selectedIds.length === expenses.length}
+                                            checked={allVisibleSelected}
                                         />
                                     </div>
                                 )}
@@ -696,15 +741,14 @@ export function ExpenseTable({
                                             ) : (
                                                 <span className="font-medium text-gray-900 dark:text-white whitespace-nowrap">
                                                     {(() => {
-                                                        const datetime = expense._dateObj || (expense.transaction_datetime ? new Date(expense.transaction_datetime) : new Date(expense.date));
-                                                        const day = datetime.getDate();
+                                                        const day = getExpenseDay(expense);
                                                         // Get ordinal suffix for day (1st, 2nd, 3rd, 4th, etc.)
                                                         const getOrdinalSuffix = (n) => {
                                                             const s = ['th', 'st', 'nd', 'rd'];
                                                             const v = n % 100;
                                                             return s[(v - 20) % 10] || s[v] || s[0];
                                                         };
-                                                        return `${day}${getOrdinalSuffix(day)}`;
+                                                        return day ? `${day}${getOrdinalSuffix(day)}` : '-';
                                                     })()}
                                                 </span>
                                             )}

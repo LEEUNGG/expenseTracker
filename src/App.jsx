@@ -9,6 +9,7 @@ import { AIExpenseModal } from './components/AIExpenseModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { Sidebar } from './components/Sidebar';
 import { ExpenseService, CategoryService, BudgetService } from './lib/services';
+import { extractDateTimeFromTimestamp } from './lib/deduplicationService';
 import { getDayType } from './lib/holidayUtils';
 import { useToast } from './components/Toast';
 import { Skeleton, SkeletonLineChart, SkeletonPieChart, SkeletonTable } from './components/Skeleton';
@@ -35,17 +36,52 @@ function App() {
   const normalizeExpenses = useCallback((data) => {
     if (!Array.isArray(data)) return [];
     return data.map(expense => {
-      const datetime = expense.transaction_datetime || expense.date;
-      const dateObj = datetime ? new Date(datetime) : null;
+      let dateStr = null;
+      if (expense?.transaction_datetime && typeof expense.transaction_datetime === 'string') {
+        const extracted = extractDateTimeFromTimestamp(expense.transaction_datetime);
+        if (extracted?.date) {
+          dateStr = extracted.date;
+        }
+      }
+      if (!dateStr && expense?.date) {
+        dateStr = expense.date;
+      }
+      let dateObj = null;
+      let year = null;
+      let month = null;
+      let day = null;
+      if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        const [yearNum, monthNum, dayNum] = dateStr.split('-').map(Number);
+        if (Number.isFinite(yearNum) && Number.isFinite(monthNum) && Number.isFinite(dayNum)) {
+          year = yearNum;
+          month = monthNum - 1;
+          day = dayNum;
+          dateObj = new Date(yearNum, monthNum - 1, dayNum);
+        }
+      } else {
+        const fallbackSource = expense?.transaction_datetime || expense?.date;
+        if (fallbackSource) {
+          const fallbackDate = new Date(fallbackSource);
+          if (!Number.isNaN(fallbackDate.getTime())) {
+            year = fallbackDate.getFullYear();
+            month = fallbackDate.getMonth();
+            day = fallbackDate.getDate();
+            dateObj = fallbackDate;
+            const monthStr = String(month + 1).padStart(2, '0');
+            const dayStr = String(day).padStart(2, '0');
+            dateStr = `${year}-${monthStr}-${dayStr}`;
+          }
+        }
+      }
       const amount = typeof expense.amount === 'number' ? expense.amount : parseFloat(expense.amount);
 
       return {
         ...expense,
         _dateObj: dateObj,
-        _year: dateObj ? dateObj.getFullYear() : null,
-        _month: dateObj ? dateObj.getMonth() : null,
-        _day: dateObj ? dateObj.getDate() : null,
-        _dateISO: dateObj ? dateObj.toISOString().split('T')[0] : null,
+        _year: year,
+        _month: month,
+        _day: day,
+        _dateISO: dateStr,
         _amount: Number.isFinite(amount) ? amount : 0,
       };
     });
@@ -163,8 +199,9 @@ function App() {
   }, [filteredExpenses]);
 
   const maxSpending = useMemo(() => {
-    const allValues = chartData.flatMap(d => [d.budget, d.spending]);
-    return Math.max(...allValues, 1000);
+    const allValues = chartData.flatMap(d => [d.budget, d.spending]).filter(v => Number.isFinite(v));
+    const maxValue = allValues.length ? Math.max(...allValues, 1000) : 1000;
+    return Math.ceil(maxValue / 1000) * 1000;
   }, [chartData]);
 
   // 获取分类数据（只在组件挂载时获取一次）

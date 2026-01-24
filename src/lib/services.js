@@ -1,10 +1,35 @@
 import { supabase } from './supabase.js';
 import { BUDGET_RULES } from './constants.js';
 
+const pad2 = (value) => String(value).padStart(2, '0');
+const buildBeijingDateTime = (dateStr, timeStr) =>
+  timeStr ? `${dateStr}T${timeStr}:00+08:00` : `${dateStr}T00:00:00+08:00`;
+const getBeijingNow = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(now);
+  const map = Object.fromEntries(parts.filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}+08:00`;
+};
+const buildBeijingMonthRange = (year, month) => {
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthStr = pad2(month);
+  return {
+    start: `${year}-${monthStr}-01T00:00:00+08:00`,
+    end: `${year}-${monthStr}-${pad2(lastDay)}T23:59:59+08:00`,
+  };
+};
+
 export class ExpenseService {
   static async getExpensesByMonth(year, month) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { start, end } = buildBeijingMonthRange(year, month);
 
     const { data, error } = await supabase
       .from('expenses')
@@ -16,8 +41,8 @@ export class ExpenseService {
           emoji
         )
       `)
-      .gte('transaction_datetime', startDate.toISOString())
-      .lte('transaction_datetime', endDate.toISOString())
+      .gte('transaction_datetime', start)
+      .lte('transaction_datetime', end)
       .order('transaction_datetime', { ascending: false });
 
     if (error) throw error;
@@ -25,17 +50,17 @@ export class ExpenseService {
   }
 
   static async createExpense(expense) {
-    // Combine date and time into transaction_datetime
     const { date, time, ...rest } = expense;
-    const datetime = time 
-      ? `${date}T${time}:00`
-      : `${date}T00:00:00`;
+    const datetime = buildBeijingDateTime(date, time);
+    const nowBeijing = getBeijingNow();
     
     const { data, error } = await supabase
       .from('expenses')
       .insert([{
         ...rest,
-        transaction_datetime: datetime
+        transaction_datetime: datetime,
+        created_at: nowBeijing,
+        updated_at: nowBeijing,
       }])
       .select()
       .single();
@@ -45,15 +70,12 @@ export class ExpenseService {
   }
 
   static async updateExpense(id, updates) {
-    // Convert date and time to transaction_datetime if present
     const { date, time, ...rest } = updates;
     const updateData = { ...rest };
+    updateData.updated_at = getBeijingNow();
     
     if (date) {
-      const datetime = time 
-        ? `${date}T${time}:00`
-        : `${date}T00:00:00`;
-      updateData.transaction_datetime = datetime;
+      updateData.transaction_datetime = buildBeijingDateTime(date, time);
     }
     
     const { data, error } = await supabase
@@ -86,8 +108,7 @@ export class ExpenseService {
   }
 
   static async getExpensesPaginated(year, month, page = 1, pageSize = 10) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { start, end } = buildBeijingMonthRange(year, month);
     const offset = (page - 1) * pageSize;
 
     const { data, error, count } = await supabase
@@ -100,8 +121,8 @@ export class ExpenseService {
           emoji
         )
       `, { count: 'exact' })
-      .gte('transaction_datetime', startDate.toISOString())
-      .lte('transaction_datetime', endDate.toISOString())
+      .gte('transaction_datetime', start)
+      .lte('transaction_datetime', end)
       .order('transaction_datetime', { ascending: false })
       .range(offset, offset + pageSize - 1);
 

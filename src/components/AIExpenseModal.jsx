@@ -1,4 +1,4 @@
-import { X, Sparkles, Upload, Trash2, RefreshCw, AlertCircle, ImageOff, Check, Square, CheckSquare, Loader2, Plus, AlertTriangle } from 'lucide-react';
+import { X, Sparkles, Upload, Trash2, RefreshCw, AlertCircle, ImageOff, Check, Square, CheckSquare, Loader2, Plus, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { 
   isValidImageType, 
@@ -100,21 +100,6 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
     }
     return '';
   }, [isTransitioning]);
-
-  // Reset state when modal closes - ensures cleanup from any state
-  useEffect(() => {
-    if (!isOpen) {
-      // Clean up all image preview URLs to prevent memory leaks
-      if (imagePreviewsRef.current && imagePreviewsRef.current.length > 0) {
-        imagePreviewsRef.current.forEach(url => {
-          if (url) URL.revokeObjectURL(url);
-        });
-        imagePreviewsRef.current = [];
-      }
-      // Use callback form to avoid direct setState in effect
-      setState(() => getInitialState());
-    }
-  }, [isOpen]);
 
   // Clean up preview URLs on unmount
   useEffect(() => {
@@ -391,7 +376,6 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
 
   /**
    * Starts the AI analysis process - batch analysis for multiple images
-   * Sequentially analyzes each image to avoid API rate limiting
    * Collects all successful results and handles partial failures
    * Integrates deduplication logic to mark duplicate records
    * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
@@ -410,39 +394,51 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
       analysisProgress: { current: 1, total: totalImages }
     });
 
-    // Track results and failures for batch processing
     const allExpenses = [];
     const failedImages = [];
+    let completedCount = 0;
 
-    // Sequential analysis to avoid API rate limiting (Requirements 3.1)
-    for (let i = 0; i < totalImages; i++) {
-      const imageFile = selectedImages[i];
-      
-      // Update progress state (Requirements 3.2)
-      updateState({
-        analysisProgress: { current: i + 1, total: totalImages }
-      });
+    const analysisPromises = selectedImages.map((imageFile, index) =>
+      analyzeReceiptImage(imageFile, categories)
+        .then(result => ({
+          status: 'fulfilled',
+          value: result,
+          index
+        }))
+        .catch(err => ({
+          status: 'rejected',
+          reason: err,
+          index
+        }))
+        .finally(() => {
+          completedCount += 1;
+          updateState({
+            analysisProgress: { current: completedCount, total: totalImages }
+          });
+        })
+    );
 
-      try {
-        const result = await analyzeReceiptImage(imageFile, categories);
-        
-        // Collect expenses from this image with sourceImageIndex (Requirements 3.3, 3.6)
-        if (result.expenses && result.expenses.length > 0) {
-          const expensesWithSource = result.expenses.map(expense => ({
+    const results = await Promise.all(analysisPromises);
+
+    results.forEach(result => {
+      if (result.status === 'fulfilled') {
+        const data = result.value;
+        if (data.expenses && data.expenses.length > 0) {
+          const expensesWithSource = data.expenses.map(expense => ({
             ...expense,
-            sourceImageIndex: i
+            sourceImageIndex: result.index
           }));
           allExpenses.push(...expensesWithSource);
         }
-      } catch (err) {
-        // Record failed image but continue processing (Requirements 3.4)
-        console.error(`AI analysis error for image ${i + 1}:`, err);
+      } else {
+        const err = result.reason;
+        console.error(`AI analysis error for image ${result.index + 1}:`, err);
         failedImages.push({
-          index: i,
-          error: err.message || 'AI analysis failed'
+          index: result.index,
+          error: err?.message || 'AI analysis failed'
         });
       }
-    }
+    });
 
     // Handle results based on success/failure counts
     const successCount = totalImages - failedImages.length;
@@ -607,7 +603,7 @@ export function AIExpenseModal({ isOpen, onClose, onConfirm, categories = [], cu
     >
       <div
         className={`w-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20 dark:border-gray-700/50 ${
-          modalState === MODAL_STATES.RESULTS ? 'max-w-4xl' : 'max-w-lg'
+          modalState === MODAL_STATES.RESULTS ? 'max-w-6xl w-[95vw]' : 'max-w-lg'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1051,6 +1047,35 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
   const isDragging = useRef(false);
   const startX = useRef(0);
   const startScrollLeft = useRef(0);
+  const [dateSortDirection, setDateSortDirection] = useState('none');
+
+  const toggleDateSort = useCallback(() => {
+    setDateSortDirection(prev => {
+      if (prev === 'none') return 'desc';
+      if (prev === 'desc') return 'asc';
+      return 'none';
+    });
+  }, []);
+
+  const sortedExpenses = useMemo(() => {
+    if (!expenses || expenses.length <= 1 || dateSortDirection === 'none') {
+      return expenses;
+    }
+
+    const getTimestamp = (expense) => {
+      if (!expense?.date) return 0;
+      const timePart = expense.time ? expense.time : '00:00:00';
+      const withTime = new Date(`${expense.date}T${timePart}`);
+      if (!Number.isNaN(withTime.getTime())) return withTime.getTime();
+      const dateOnly = new Date(expense.date);
+      return Number.isNaN(dateOnly.getTime()) ? 0 : dateOnly.getTime();
+    };
+
+    return [...expenses].sort((a, b) => {
+      const delta = getTimestamp(a) - getTimestamp(b);
+      return dateSortDirection === 'asc' ? delta : -delta;
+    });
+  }, [expenses, dateSortDirection]);
 
   /**
    * Updates scrollbar thumb position and visibility based on container scroll state
@@ -1291,7 +1316,18 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
               {/* Status column - Requirements 4.1 */}
               <th scope="col" className="px-2 py-3 text-center whitespace-nowrap">Status</th>
               {/* Date/Time column - Requirements 3.1, 3.2, 3.3 */}
-              <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Date/Time</th>
+              <th
+                scope="col"
+                className="px-3 py-3 text-center whitespace-nowrap cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors select-none"
+                onClick={toggleDateSort}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  Date/Time
+                  {dateSortDirection === 'none' && <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />}
+                  {dateSortDirection === 'asc' && <ArrowUp className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />}
+                  {dateSortDirection === 'desc' && <ArrowDown className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />}
+                </div>
+              </th>
               <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Category</th>
               <th scope="col" className="px-3 py-3 whitespace-nowrap">Description</th>
               <th scope="col" className="px-3 py-3 text-center whitespace-nowrap">Essential</th>
@@ -1299,7 +1335,7 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
             </tr>
           </thead>
           <tbody>
-            {expenses.map((expense) => (
+            {sortedExpenses.map((expense) => (
               <tr
                 key={expense.id}
                 className={`border-b dark:border-gray-700 transition-colors ${
@@ -1485,5 +1521,3 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
     </div>
   );
 }
-
-

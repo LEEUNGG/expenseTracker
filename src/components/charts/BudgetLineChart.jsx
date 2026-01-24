@@ -252,17 +252,16 @@ function calculateOverspending(data) {
 }
 
 // Constants for Y-axis configuration
-const Y_AXIS_WIDTH = 50;
+const Y_AXIS_WIDTH = 120;
 const CHART_HEIGHT = 320;
-const CHART_MARGIN = { top: 10, bottom: 20, left: 10, right: 10 };
-const DEFAULT_TICK_COUNT = 5;
+const CHART_MARGIN = { top: 10, bottom: 20, left: 10, right: 50 };
+const Y_AXIS_STEP = 1000;
 
 // Calculate Y-axis tick values
-function calculateYAxisTicks(domain, tickCount = DEFAULT_TICK_COUNT) {
-  const [min, max] = domain;
-  if (max === min) return [min];
-  const step = (max - min) / (tickCount - 1);
-  return Array.from({ length: tickCount }, (_, i) => Math.round(min + step * i));
+function calculateYAxisTicks(domain) {
+  const max = Math.max(domain?.[1] || 0, Y_AXIS_STEP);
+  const tickCount = Math.max(1, Math.ceil(max / Y_AXIS_STEP));
+  return Array.from({ length: tickCount }, (_, i) => Y_AXIS_STEP * (i + 1));
 }
 
 // Calculate tick Y position
@@ -467,9 +466,43 @@ const CustomizedAxisTick = (props) => {
 };
 
 // Custom Sticky Y-Axis component
-const StickyYAxis = ({ domain, height, isDark, margin }) => {
-  const ticks = useMemo(() => calculateYAxisTicks(domain, DEFAULT_TICK_COUNT), [domain]);
+const StickyYAxis = ({ domain, height, isDark, margin, markers }) => {
+  const ticks = useMemo(() => calculateYAxisTicks(domain), [domain]);
   const textColor = isDark ? '#94a3b8' : '#64748b';
+  const positionedMarkers = useMemo(() => {
+    if (!markers?.length) return [];
+    const minSpacing = 18;
+    const maxY = height - margin.bottom;
+    const minY = margin.top;
+    const ordered = markers
+      .map(marker => ({
+        ...marker,
+        y: calculateTickPosition(marker.value, domain, height, margin)
+      }))
+      .sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ordered.length; i += 1) {
+      if (ordered[i].y - ordered[i - 1].y < minSpacing) {
+        ordered[i].y = ordered[i - 1].y + minSpacing;
+      }
+    }
+    for (let i = ordered.length - 1; i >= 0; i -= 1) {
+      if (ordered[i].y > maxY) {
+        ordered[i].y = maxY;
+        if (i > 0 && ordered[i].y - ordered[i - 1].y < minSpacing) {
+          ordered[i - 1].y = ordered[i].y - minSpacing;
+        }
+      }
+    }
+    for (let i = 0; i < ordered.length; i += 1) {
+      if (ordered[i].y < minY) {
+        ordered[i].y = minY;
+        if (i < ordered.length - 1 && ordered[i + 1].y - ordered[i].y < minSpacing) {
+          ordered[i + 1].y = ordered[i].y + minSpacing;
+        }
+      }
+    }
+    return ordered;
+  }, [markers, domain, height, margin]);
 
   return (
     <svg width={Y_AXIS_WIDTH} height={height}>
@@ -487,6 +520,39 @@ const StickyYAxis = ({ domain, height, isDark, margin }) => {
           >
             {tick.toLocaleString()}
           </text>
+        );
+      })}
+      {positionedMarkers.map((marker, index) => {
+        const label = `${marker.value?.toLocaleString() ?? ''}`;
+        const paddingX = 8;
+        const rectHeight = 20;
+        const rectWidth = Math.max(64, label.length * 6 + paddingX * 2);
+        const rectX = Y_AXIS_WIDTH - 8 - rectWidth;
+        const rectY = marker.y - rectHeight / 2;
+        return (
+          <g key={`${marker.label}-${index}`}>
+            <rect
+              x={rectX}
+              y={rectY}
+              width={rectWidth}
+              height={rectHeight}
+              rx={10}
+              ry={10}
+              fill={marker.background}
+              stroke={marker.color}
+              strokeWidth={1}
+            />
+            <text
+              x={rectX + rectWidth / 2}
+              y={marker.y + 0.5}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill={marker.color}
+              className="text-[10px] font-semibold"
+            >
+              {label}
+            </text>
+          </g>
         );
       })}
     </svg>
@@ -555,6 +621,35 @@ const BudgetLineChart = memo(function BudgetLineChart({ data, maxSpending, onBud
 
   // Get theme colors
   const overBudgetColors = isDark ? OVER_BUDGET_COLORS.dark : OVER_BUDGET_COLORS.light;
+  const latestSpendingPoint = useMemo(() => {
+    const points = filteredData.filter(d => d.spending !== null && d.spending !== undefined);
+    return points.length ? points[points.length - 1] : null;
+  }, [filteredData]);
+  const totalBudgetValue = useMemo(() => {
+    if (!data?.length) return null;
+    const lastPoint = data[data.length - 1];
+    return typeof lastPoint?.budget === 'number' ? lastPoint.budget : null;
+  }, [data]);
+  const axisMarkers = useMemo(() => {
+    const markers = [];
+    if (totalBudgetValue !== null && totalBudgetValue !== undefined) {
+      markers.push({
+        value: totalBudgetValue,
+        label: 'Total Budget',
+        color: '#10b981',
+        background: isDark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.12)'
+      });
+    }
+    if (latestSpendingPoint?.spending !== null && latestSpendingPoint?.spending !== undefined) {
+      markers.push({
+        value: latestSpendingPoint.spending,
+        label: 'Latest Expenses',
+        color: isDark ? '#f87171' : '#ef4444',
+        background: isDark ? 'rgba(248,113,113,0.25)' : 'rgba(239,68,68,0.12)'
+      });
+    }
+    return markers;
+  }, [totalBudgetValue, latestSpendingPoint, isDark]);
 
   const handleClick = (e) => {
     if (e && e.activeLabel && onBudgetClick) {
@@ -720,6 +815,7 @@ const BudgetLineChart = memo(function BudgetLineChart({ data, maxSpending, onBud
             height={CHART_HEIGHT}
             isDark={isDark}
             margin={CHART_MARGIN}
+            markers={axisMarkers}
           />
         </div>
 
@@ -837,8 +933,6 @@ const BudgetLineChart = memo(function BudgetLineChart({ data, maxSpending, onBud
                     dot={false}
                     activeDot={false}
                     isAnimationActive={false}
-                    // Custom shape to render segmented line
-                    // eslint-disable-next-line react/no-unstable-nested-components
                     shape={(props) => (
                       <SegmentedSpendingLine 
                         points={props.points} 
@@ -932,17 +1026,4 @@ const BudgetLineChart = memo(function BudgetLineChart({ data, maxSpending, onBud
   );
 });
 
-// Export utility functions for testing
-// eslint-disable-next-line react-refresh/only-export-components
-export { 
-  calculateYAxisTicks, 
-  calculateTickPosition, 
-  filterSpendingData, 
-  calculateOverspending,
-  OVER_BUDGET_COLORS,
-  OverBudgetAreaPattern,
-  SegmentedSpendingLine,
-  EnhancedTooltip,
-  FirstOverspendMarker,
-  BudgetLineChart
-};
+export { BudgetLineChart };
