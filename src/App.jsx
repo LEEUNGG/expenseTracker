@@ -1,217 +1,75 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Menu, Sparkles, Loader2, RefreshCw } from 'lucide-react';
-import { MonthSelector } from './components/MonthSelector';
-import { BudgetLineChart } from './components/charts/BudgetLineChart';
-import { CategoryPieChart } from './components/charts/CategoryPieChart';
-import { EssentialPieChart } from './components/charts/EssentialPieChart';
-import { ExpenseTable } from './components/ExpenseTable';
-import { AIExpenseModal } from './components/AIExpenseModal';
-import { ConfirmModal } from './components/ConfirmModal';
+import { Menu } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
-import { ExpenseService, CategoryService, BudgetService } from './lib/services';
-import { extractDateTimeFromTimestamp } from './lib/deduplicationService';
-import { getDayType } from './lib/holidayUtils';
-import { useToast } from './components/Toast';
-import { Skeleton, SkeletonLineChart, SkeletonPieChart, SkeletonTable } from './components/Skeleton';
 import { DebtDashboard } from './components/DebtDashboard';
+import { ExpenseDashboardPage } from './pages/ExpenseDashboardPage';
+import { CategoryService } from './lib/services';
+import { useToast } from './components/Toast';
 
-function App() {
-  const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('activeTab') || 'expenses';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('activeTab', activeTab);
-  }, [activeTab]);
-
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [expenses, setExpenses] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [budgetAdjustments, setBudgetAdjustments] = useState([]);
-  const [holidays, setHolidays] = useState([]);
-  const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [confirmModal, setConfirmModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: null,
-  });
-  const { addToast } = useToast();
-
-  const normalizeExpenses = useCallback((data) => {
-    if (!Array.isArray(data)) return [];
-    return data.map(expense => {
-      let dateStr = null;
-      if (expense?.transaction_datetime && typeof expense.transaction_datetime === 'string') {
-        const extracted = extractDateTimeFromTimestamp(expense.transaction_datetime);
-        if (extracted?.date) {
-          dateStr = extracted.date;
-        }
-      }
-      if (!dateStr && expense?.date) {
-        dateStr = expense.date;
-      }
-      let dateObj = null;
-      let year = null;
-      let month = null;
-      let day = null;
-      if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        const [yearNum, monthNum, dayNum] = dateStr.split('-').map(Number);
-        if (Number.isFinite(yearNum) && Number.isFinite(monthNum) && Number.isFinite(dayNum)) {
-          year = yearNum;
-          month = monthNum - 1;
-          day = dayNum;
-          dateObj = new Date(yearNum, monthNum - 1, dayNum);
-        }
-      } else {
-        const fallbackSource = expense?.transaction_datetime || expense?.date;
-        if (fallbackSource) {
-          const fallbackDate = new Date(fallbackSource);
-          if (!Number.isNaN(fallbackDate.getTime())) {
-            year = fallbackDate.getFullYear();
-            month = fallbackDate.getMonth();
-            day = fallbackDate.getDate();
-            dateObj = fallbackDate;
-            const monthStr = String(month + 1).padStart(2, '0');
-            const dayStr = String(day).padStart(2, '0');
-            dateStr = `${year}-${monthStr}-${dayStr}`;
-          }
-        }
-      }
-      const amount = typeof expense.amount === 'number' ? expense.amount : parseFloat(expense.amount);
-
-      return {
-        ...expense,
-        _dateObj: dateObj,
-        _year: year,
-        _month: month,
-        _day: day,
-        _dateISO: dateStr,
-        _amount: Number.isFinite(amount) ? amount : 0,
-      };
-    });
-  }, []);
+function Layout({ 
+  isSidebarOpen, 
+  setIsSidebarOpen, 
+  categories, 
+  onCategoryUpdate, 
+  onCategoryDelete, 
+  onCategoryCreate 
+}) {
+  const location = useLocation();
+  
+  const getTitle = () => {
+    switch (location.pathname) {
+      case '/expenses': return 'Expense Tracker';
+      case '/debt': return 'Debt Tracker';
+      case '/diet': return 'Diet Management';
+      default: return 'Expense Tracker';
+    }
+  };
 
   const activeCategories = useMemo(() => categories.filter(c => !c.is_deleted), [categories]);
-  const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
 
-  // Helper function to show confirmation modal
-  const showConfirmModal = useCallback(({ title, message, onConfirm }) => {
-    setConfirmModal({
-      isOpen: true,
-      title,
-      message,
-      onConfirm,
-    });
-  }, []);
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        categories={activeCategories}
+        onCategoryUpdate={onCategoryUpdate}
+        onCategoryDelete={onCategoryDelete}
+        onCategoryCreate={onCategoryCreate}
+      />
 
-  // Helper function to close confirmation modal
-  const closeConfirmModal = useCallback(() => {
-    setConfirmModal(prev => ({
-      ...prev,
-      isOpen: false,
-    }));
-  }, []);
+      <div>
+        <header className="sticky top-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-2xl border-b border-white/20 dark:border-gray-700/50 shadow-lg">
+          <div className="w-[80%] mx-auto px-2 sm:px-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[4rem] py-2">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                <button
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-300 backdrop-blur-sm flex-shrink-0"
+                >
+                  <Menu className="w-5 h-5 text-gray-700 dark:text-gray-200" />
+                </button>
+                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent whitespace-nowrap truncate">
+                  {getTitle()}
+                </h1>
+              </div>
+            </div>
+          </div>
+        </header>
 
-  const currentYear = currentMonth.getFullYear();
-  const currentMonthNum = currentMonth.getMonth() + 1;
+        <main className="w-[80%] mx-auto py-8">
+           <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
 
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => (
-      expense._year === currentYear && expense._month === currentMonthNum - 1
-    ));
-  }, [expenses, currentYear, currentMonthNum]);
-
-  const chartData = useMemo(() => {
-    const daysInMonth = new Date(currentYear, currentMonthNum, 0).getDate();
-    const dailyBudgets = BudgetService.calculateDailyBudget(currentYear, currentMonthNum, budgetAdjustments, holidays);
-    const accumulativeBudgets = BudgetService.calculateAccumulativeBudget(dailyBudgets);
-
-    const holidayMap = new Map(holidays.map(h => [h.date, h.type]));
-    const adjustmentsMap = new Map(budgetAdjustments.map(a => [a.date, true]));
-
-    const dailySpending = new Array(daysInMonth).fill(0);
-    filteredExpenses.forEach(expense => {
-      const day = (expense._day ?? new Date(expense.transaction_datetime).getDate()) - 1;
-      dailySpending[day] += expense._amount;
-    });
-
-    let accumulativeSpending = 0;
-    const accumulativeSpendingData = dailySpending.map(spending => {
-      accumulativeSpending += spending;
-      return accumulativeSpending;
-    });
-
-    return Array.from({ length: daysInMonth }, (_, i) => {
-      const date = new Date(currentYear, currentMonthNum - 1, i + 1);
-      const yearLocal = date.getFullYear();
-      const monthLocal = String(date.getMonth() + 1).padStart(2, '0');
-      const dayLocal = String(date.getDate()).padStart(2, '0');
-      const dateStr = `${yearLocal}-${monthLocal}-${dayLocal}`;
-
-      return {
-        day: i + 1,
-        budget: accumulativeBudgets[i],
-        spending: accumulativeSpendingData[i],
-        dayType: getDayType(date, holidayMap),
-        hasAdjustment: adjustmentsMap.has(dateStr),
-      };
-    }).map(item => ({
-      ...item,
-      budget: Math.round(item.budget * 100) / 100,
-      spending: Math.round(item.spending * 100) / 100,
-    }));
-  }, [currentYear, currentMonthNum, filteredExpenses, budgetAdjustments, holidays]);
-
-  const categoryChartData = useMemo(() => {
-    const categoryTotals = new Map();
-
-    filteredExpenses.forEach(expense => {
-      const category = categoryById.get(expense.category_id);
-      const key = category ? category.id : 'unknown';
-      const current = categoryTotals.get(key) || {
-        name: category ? `${category.emoji} ${category.name}` : 'Unknown',
-        value: 0,
-        color: category ? category.color : '#3b82f6',
-      };
-
-      current.value += expense._amount;
-      categoryTotals.set(key, current);
-    });
-
-    return Array.from(categoryTotals.values()).map(item => ({
-      ...item,
-      value: Math.round(item.value * 100) / 100,
-    }));
-  }, [filteredExpenses, categoryById]);
-
-  const essentialChartData = useMemo(() => {
-    let essentialTotal = 0;
-    let nonEssentialTotal = 0;
-
-    filteredExpenses.forEach(expense => {
-      if (expense.is_essential) {
-        essentialTotal += expense._amount;
-      } else {
-        nonEssentialTotal += expense._amount;
-      }
-    });
-
-    return [
-      { name: 'Essential', value: Math.round(essentialTotal * 100) / 100 },
-      { name: 'Non-essential', value: Math.round(nonEssentialTotal * 100) / 100 },
-    ];
-  }, [filteredExpenses]);
-
-  const maxSpending = useMemo(() => {
-    const allValues = chartData.flatMap(d => [d.budget, d.spending]).filter(v => Number.isFinite(v));
-    const maxValue = allValues.length ? Math.max(...allValues, 1000) : 1000;
-    return Math.ceil(maxValue / 1000) * 1000;
-  }, [chartData]);
+function App() {
+  const [categories, setCategories] = useState([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { addToast } = useToast();
 
   // 获取分类数据（只在组件挂载时获取一次）
   useEffect(() => {
@@ -221,198 +79,11 @@ function App() {
         setCategories(data || []);
       } catch (err) {
         console.error('Failed to fetch categories:', err);
-        setError('Failed to fetch category data');
+        addToast('Failed to fetch category data', 'error');
       }
     };
     fetchCategories();
-  }, []);
-
-  // 获取消费记录和预算调整（当月份变化时重新获取）
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [expensesData, budgetData, holidaysData] = await Promise.all([
-          ExpenseService.getExpensesByMonth(currentYear, currentMonthNum),
-          BudgetService.getBudgetAdjustments(currentYear, currentMonthNum),
-          BudgetService.getHolidays(currentYear, currentMonthNum),
-        ]);
-        setExpenses(normalizeExpenses(expensesData || []));
-        setBudgetAdjustments(budgetData || []);
-        setHolidays(holidaysData || []);
-      } catch (err) {
-        console.error('Failed to fetch data:', err);
-        setError('Failed to fetch data, please check your network connection');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, [currentYear, currentMonthNum, normalizeExpenses]);
-
-  // 刷新当月消费数据
-  const refreshExpenses = useCallback(async () => {
-    try {
-      const data = await ExpenseService.getExpensesByMonth(currentYear, currentMonthNum);
-      setExpenses(normalizeExpenses(data || []));
-    } catch (err) {
-      console.error('Failed to refresh expense data:', err);
-    }
-  }, [currentYear, currentMonthNum, normalizeExpenses]);
-
-  // Handle manual refresh data button click
-  const handleRefreshData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const [expensesData, budgetData, holidaysData] = await Promise.all([
-        ExpenseService.getExpensesByMonth(currentYear, currentMonthNum),
-        BudgetService.getBudgetAdjustments(currentYear, currentMonthNum),
-        BudgetService.getHolidays(currentYear, currentMonthNum),
-      ]);
-      setExpenses(normalizeExpenses(expensesData || []));
-      setBudgetAdjustments(budgetData || []);
-      setHolidays(holidaysData || []);
-      addToast('Data refreshed successfully');
-    } catch (err) {
-      console.error('Failed to refresh data:', err);
-      addToast('Failed to refresh data, please try again', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addToast, currentMonthNum, currentYear, normalizeExpenses]);
-
-  const handlePreviousMonth = useCallback(() => {
-    const minMonth = new Date(2026, 0, 1);
-    const newMonth = new Date(currentMonth);
-    newMonth.setMonth(newMonth.getMonth() - 1);
-
-    if (newMonth >= minMonth) {
-      setCurrentMonth(newMonth);
-      setSelectedExpenseIds([]);
-    }
-  }, [currentMonth]);
-
-  const handleNextMonth = useCallback(() => {
-    const maxMonth = new Date();
-    const newMonth = new Date(currentMonth);
-    newMonth.setMonth(newMonth.getMonth() + 1);
-
-    if (newMonth <= maxMonth) {
-      setCurrentMonth(newMonth);
-      setSelectedExpenseIds([]);
-    }
-  }, [currentMonth]);
-
-  const handleCreateExpense = useCallback(async (expense) => {
-    try {
-      await ExpenseService.createExpense(expense);
-      await refreshExpenses();
-      addToast('New expense record created successfully');
-    } catch (err) {
-      console.error('CRITICAL: Failed to create expense record!', {
-        error: err,
-        expense: expense,
-        message: err.message,
-        details: err.details,
-        hint: err.hint
-      });
-      addToast('Failed to create expense, please try again', 'error');
-    }
-  }, [addToast, refreshExpenses]);
-
-  const handleUpdateExpense = useCallback(async (id, updates) => {
-    try {
-      await ExpenseService.updateExpense(id, updates);
-      await refreshExpenses();
-      addToast('Expense record updated successfully');
-    } catch (err) {
-      console.error('Failed to update expense:', err);
-      addToast('Failed to update expense, please try again', 'error');
-    }
-  }, [addToast, refreshExpenses]);
-
-  const handleDeleteExpense = useCallback(async (id) => {
-    showConfirmModal({
-      title: 'Delete Expense',
-      message: 'Are you sure you want to delete this expense record?',
-      onConfirm: async () => {
-        try {
-          await ExpenseService.deleteExpense(id);
-          setSelectedExpenseIds(prev => prev.filter(sid => sid !== id));
-          await refreshExpenses();
-          addToast('Expense record deleted successfully');
-        } catch (err) {
-          console.error('Failed to delete expense:', err);
-          addToast('Failed to delete expense, please try again', 'error');
-        }
-      },
-    });
-  }, [addToast, refreshExpenses, showConfirmModal]);
-
-  const handleBatchDelete = useCallback(async () => {
-    const count = selectedExpenseIds.length;
-    showConfirmModal({
-      title: 'Delete Multiple Expenses',
-      message: `Are you sure you want to delete ${count} selected records?`,
-      onConfirm: async () => {
-        try {
-          await ExpenseService.deleteExpenses(selectedExpenseIds);
-          setSelectedExpenseIds([]);
-          await refreshExpenses();
-          addToast(`${count} records deleted successfully`);
-        } catch (err) {
-          console.error('Batch delete failed:', err);
-          addToast('Batch delete failed, please try again', 'error');
-        }
-      },
-    });
-  }, [addToast, refreshExpenses, selectedExpenseIds, showConfirmModal]);
-
-  const handleAIConfirm = useCallback(async (items) => {
-    try {
-      for (const item of items) {
-        await ExpenseService.createExpense({
-          ...item,
-          amount: parseFloat(item.amount),
-          time: item.time || null, // Pass time field for transaction_datetime
-        });
-      }
-      await refreshExpenses();
-      addToast(`${items.length} records entered from AI successfully`);
-    } catch (err) {
-      console.error('AI entry failed:', err);
-      addToast('AI entry failed, please try again', 'error');
-    }
-  }, [addToast, refreshExpenses]);
-
-  const handleBudgetAdjust = useCallback(async (day, currentBudget) => {
-    const newBudget = window.prompt(`Adjust daily budget for Day ${day}?`, currentBudget);
-    if (newBudget !== null && !isNaN(parseFloat(newBudget))) {
-      const date = new Date(currentYear, currentMonthNum - 1, day);
-      const yearLocal = date.getFullYear();
-      const monthLocal = String(date.getMonth() + 1).padStart(2, '0');
-      const dayLocal = String(date.getDate()).padStart(2, '0');
-      const dateStr = `${yearLocal}-${monthLocal}-${dayLocal}`;
-
-      try {
-        await BudgetService.upsertBudgetAdjustment({
-          date: dateStr,
-          budget_amount: parseFloat(newBudget),
-          reason: 'Manual adjustment from chart',
-        });
-
-        // Refresh budget adjustments
-        const budgetData = await BudgetService.getBudgetAdjustments(currentYear, currentMonthNum);
-        setBudgetAdjustments(budgetData || []);
-        addToast(`Budget for Day ${day} updated and saved to database`);
-      } catch (err) {
-        console.error('Failed to update budget:', err);
-        addToast('Failed to update budget', 'error');
-      }
-    }
-  }, [addToast, currentMonthNum, currentYear]);
+  }, [addToast]);
 
   const handleCategoryUpdate = useCallback(async (id, updates) => {
     try {
@@ -451,165 +122,33 @@ function App() {
   }, [addToast]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        categories={activeCategories}
-        onCategoryUpdate={handleCategoryUpdate}
-        onCategoryDelete={handleCategoryDelete}
-        onCategoryCreate={handleCategoryCreate}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
-
-      <div>
-        <header className="sticky top-0 z-20 bg-white/60 dark:bg-gray-900/60 backdrop-blur-2xl border-b border-white/20 dark:border-gray-700/50 shadow-lg">
-          <div className="w-[80%] mx-auto px-2 sm:px-0">
-            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[4rem] py-2">
-              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                <button
-                  onClick={() => setIsSidebarOpen(true)}
-                  className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-300 backdrop-blur-sm flex-shrink-0"
-                >
-                  <Menu className="w-5 h-5 text-gray-700 dark:text-gray-200" />
-                </button>
-                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent whitespace-nowrap truncate">
-                  {activeTab === 'expenses' ? 'Expense Tracker' : 'Debt Tracker'}
-                </h1>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout 
+            isSidebarOpen={isSidebarOpen} 
+            setIsSidebarOpen={setIsSidebarOpen}
+            categories={categories}
+            onCategoryUpdate={handleCategoryUpdate}
+            onCategoryDelete={handleCategoryDelete}
+            onCategoryCreate={handleCategoryCreate}
+          />}>
+          <Route path="/" element={<Navigate to="/expenses" replace />} />
+          <Route path="/expenses" element={<ExpenseDashboardPage categories={categories} />} />
+          <Route path="/debt" element={<DebtDashboard />} />
+          <Route path="/diet" element={
+            <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-4">
+              <div className="bg-green-100 dark:bg-green-900/30 p-6 rounded-full">
+                <span className="text-4xl">🥗</span>
               </div>
-
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={handleRefreshData}
-                  disabled={isLoading}
-                  className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-xl transition-all duration-300 backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Refresh data"
-                >
-                  <RefreshCw className={`w-5 h-5 text-gray-700 dark:text-gray-200 ${isLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Diet Management</h2>
+              <p className="text-gray-500 dark:text-gray-400 max-w-md">
+                This feature is coming soon! Track your calories, macros, and meal plans all in one place.
+              </p>
             </div>
-          </div>
-        </header>
-
-        <main className="w-[80%] mx-auto py-8">
-          {activeTab === 'debt' ? (
-            <DebtDashboard />
-          ) : (
-            <div className="space-y-8">
-            <div className="flex justify-center">
-              <MonthSelector
-                currentMonth={currentMonth}
-                onPrevious={handlePreviousMonth}
-                onNext={handleNextMonth}
-              />
-            </div>
-
-            {/* 错误提示 */}
-            {error && (
-              <div className="bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded-xl">
-                <p>{error}</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="underline mt-1 hover:text-red-800 dark:hover:text-red-200"
-                >
-                  Click to refresh page
-                </button>
-              </div>
-            )}
-
-            {/* 加载状态 */}
-            {isLoading ? (
-              <div className="space-y-8 animate-in fade-in duration-500">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                  <div className="lg:col-span-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <div className="flex justify-between items-center mb-6">
-                      <Skeleton className="h-7 w-64" />
-                    </div>
-                    <SkeletonLineChart />
-                  </div>
-
-                  <div className="h-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <Skeleton className="h-7 w-48 mb-6" />
-                    <SkeletonPieChart />
-                  </div>
-
-                  <div className="h-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <Skeleton className="h-7 w-48 mb-6" />
-                    <SkeletonPieChart />
-                  </div>
-                </div>
-
-                <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                  <SkeletonTable />
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                  <div className="lg:col-span-2 bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-100 italic">Budget vs Spending Trend (Click day to adjust budget)</h3>
-                    <BudgetLineChart
-                      data={chartData}
-                      maxSpending={maxSpending}
-                      onBudgetClick={handleBudgetAdjust}
-                      currentMonth={currentMonth}
-                    />
-                  </div>
-
-                  <div className="h-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <h3 className="text-lg font-semibold mb-4 bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent">Category Distribution</h3>
-                    <CategoryPieChart data={categoryChartData} />
-                  </div>
-
-                  <div className="h-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                    <h3 className="text-lg font-semibold mb-4 bg-gradient-to-r from-cyan-500 to-blue-500 bg-clip-text text-transparent">Essential vs Non-essential</h3>
-                    <EssentialPieChart data={essentialChartData} />
-                  </div>
-                </div>
-
-                <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
-                  <ExpenseTable
-                    expenses={filteredExpenses}
-                    allExpenses={filteredExpenses}
-                    categories={activeCategories}
-                    currentMonth={currentMonth}
-                    onCreate={handleCreateExpense}
-                    onUpdate={handleUpdateExpense}
-                    onDelete={handleDeleteExpense}
-                    selectedIds={selectedExpenseIds}
-                    onSelectionChange={setSelectedExpenseIds}
-                    onBatchDelete={handleBatchDelete}
-                    onAIEntry={() => setIsAIModalOpen(true)}
-                  />
-                </div>
-              </>
-            )}
-            </div>
-          )}
-        </main>
-      </div>
-
-      <AIExpenseModal
-        isOpen={isAIModalOpen}
-        onClose={() => setIsAIModalOpen(false)}
-        onConfirm={handleAIConfirm}
-        categories={activeCategories}
-        currentMonth={currentMonth}
-      />
-
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={closeConfirmModal}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        confirmText="Delete"
-        cancelText="Cancel"
-        confirmVariant="danger"
-      />
-    </div>
+          } />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 
