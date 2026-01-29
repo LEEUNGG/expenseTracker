@@ -1,3 +1,6 @@
+-- Existing schema...
+-- (I will append the new table here)
+
 -- Create categories table
 CREATE TABLE IF NOT EXISTS categories (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -114,3 +117,30 @@ INSERT INTO holidays (date, type, name) VALUES
   ('2026-09-20', 'workday', 'NAT+'),
   ('2026-10-10', 'workday', 'NAT+')
 ON CONFLICT (date) DO UPDATE SET type = EXCLUDED.type, name = EXCLUDED.name;
+
+-- ==========================================
+-- 4. Debt Module Tables
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS debts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  month_date DATE NOT NULL UNIQUE, -- Storing the first day of the month (e.g., 2026-01-01)
+  ali_hua DECIMAL(10, 2) DEFAULT 0,
+  ali_jie DECIMAL(10, 2) DEFAULT 0,
+  cmb DECIMAL(10, 2) DEFAULT 0,
+  jd_gold DECIMAL(10, 2) DEFAULT 0,
+  jd_white DECIMAL(10, 2) DEFAULT 0,
+  tiktok DECIMAL(10, 2) DEFAULT 0,
+  salary DECIMAL(10, 2) DEFAULT 0,
+  -- We can store derived fields if desired, or calculate them.
+  -- User requested these in the table structure description.
+  monthly_total_debt DECIMAL(10, 2) GENERATED ALWAYS AS (ali_hua + ali_jie + cmb + jd_gold + jd_white + tiktok) STORED,
+  net_cash_flow DECIMAL(10, 2) GENERATED ALWAYS AS (salary - (ali_hua + ali_jie + cmb + jd_gold + jd_white + tiktok)) STORED,
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS for debts
+ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all access for all users" ON debts FOR ALL USING (true);

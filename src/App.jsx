@@ -13,8 +13,17 @@ import { extractDateTimeFromTimestamp } from './lib/deduplicationService';
 import { getDayType } from './lib/holidayUtils';
 import { useToast } from './components/Toast';
 import { Skeleton, SkeletonLineChart, SkeletonPieChart, SkeletonTable } from './components/Skeleton';
+import { DebtDashboard } from './components/DebtDashboard';
 
 function App() {
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'expenses';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -450,6 +459,8 @@ function App() {
         onCategoryUpdate={handleCategoryUpdate}
         onCategoryDelete={handleCategoryDelete}
         onCategoryCreate={handleCategoryCreate}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       <div>
@@ -463,7 +474,9 @@ function App() {
                 >
                   <Menu className="w-5 h-5 text-gray-700 dark:text-gray-200" />
                 </button>
-                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent whitespace-nowrap truncate">Expense Tracker</h1>
+                <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent whitespace-nowrap truncate">
+                  {activeTab === 'expenses' ? 'Expense Tracker' : 'Debt Tracker'}
+                </h1>
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -481,7 +494,10 @@ function App() {
         </header>
 
         <main className="w-[80%] mx-auto py-8">
-          <div className="space-y-8">
+          {activeTab === 'debt' ? (
+            <DebtDashboard />
+          ) : (
+            <div className="space-y-8">
             <div className="flex justify-center">
               <MonthSelector
                 currentMonth={currentMonth}
@@ -570,7 +586,8 @@ function App() {
                 </div>
               </>
             )}
-          </div>
+            </div>
+          )}
         </main>
       </div>
 

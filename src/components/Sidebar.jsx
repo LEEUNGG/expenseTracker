@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Settings, Moon, Sun, X, Plus, Edit2, Trash2, Save } from 'lucide-react';
+import { Settings, Moon, Sun, X, Plus, Edit2, Trash2, Save, LayoutDashboard, CreditCard } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
 
-export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCategoryDelete, onCategoryCreate }) {
+export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCategoryDelete, onCategoryCreate, activeTab, onTabChange }) {
   const { theme } = useTheme();
   const [showSettings, setShowSettings] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
@@ -72,6 +72,33 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="space-y-2 pb-6 border-b border-gray-200 dark:border-gray-700">
+              <button 
+                onClick={() => { if (onTabChange) onTabChange('expenses'); onClose(); }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors", 
+                  activeTab === 'expenses' 
+                    ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium" 
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                )}
+              >
+                <LayoutDashboard className="w-5 h-5" />
+                <span>Expense Tracker</span>
+              </button>
+              <button 
+                onClick={() => { if (onTabChange) onTabChange('debt'); onClose(); }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors", 
+                  activeTab === 'debt' 
+                    ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium" 
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                )}
+              >
+                <CreditCard className="w-5 h-5" />
+                <span>Debt Tracker</span>
+              </button>
+            </div>
+
             <div>
               <button
                 onClick={() => setShowSettings(!showSettings)}
