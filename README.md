@@ -1,224 +1,94 @@
-# 记账应用
+# Personal Finance Dashboard
 
-一个现代化的记账应用，支持消费记录、预算管理、数据可视化和AI入账功能。
+一个现代化的个人财务管理仪表盘，集成了日常记账、债务追踪和未来的健康饮食管理功能。基于 React 生态系统构建，采用最新的前端技术栈。
 
-## 功能特性
+## 🌟 核心功能
 
-### 核心功能
-- **月份切换**：支持在2026年1月至当前月份之间切换
-- **消费记录管理**：完整的增删改查功能
-- **批量操作**：支持批量删除消费记录
-- **分页显示**：每页显示10条记录
+### 1. 💰 支出管理 (Expense Tracker)
+- **智能看板**：基于日历月份的消费概览，直观展示每日预算与实际支出的对比趋势。
+- **AI 智能入账**：支持上传消费小票或截图，利用 Gemini AI 自动识别金额、日期和类别，实现一键入账。
+- **数据可视化**：
+  - **预算趋势图**：累积预算 vs 累积消费，支持点击图表手动调整单日预算。
+  - **分类分布图**：清晰展示各消费类别的占比。
+  - **必要性分析**：分析“必需”与“非必需”支出的比例，辅助理性消费。
+- **全功能管理**：支持消费记录的增删改查、批量删除、按月筛选。
+- **自定义分类**：支持管理消费类别（名称、颜色、Emoji）。
 
-### 数据可视化
-- **预算与消费趋势图**：展示累积预算和累积消费的对比，支持横向滑动
-- **类别分布饼图**：按消费类别展示消费分布
-- **必需/非必需饼图**：展示必需和非必需消费的比例
+### 2. 💳 债务追踪 (Debt Tracker)
+- **还款时间轴**：直观的时间轴视图，展示每月的还款计划和金额。
+- **债务结构分析**：堆叠柱状图展示本金与利息的构成。
+- **趋势监控**：追踪每月总债务余额变化及净现金流情况。
+- **数据驱动**：清晰掌握房贷、车贷等长期债务的偿还进度。
 
-### AI入账
-- 支持多图片上传
-- AI自动识别消费信息
-- 支持手动编辑和确认后入库
+### 3. 🥗 饮食管理 (Diet Management)
+- *Coming Soon*：预留模块，未来将支持卡路里追踪、宏量营养素分析及膳食计划。
 
-### 类别管理
-- 自定义消费类别
-- 支持编辑类别名称和emoji
-- 删除类别不影响已有数据
+### 4. 🛠️ 系统特性
+- **现代化架构**：基于 `react-router-dom` 的路由管理，支持按需加载和模块化开发。
+- **暗黑模式**：完美支持 Light/Dark 主题切换，自动适应系统偏好。
+- **响应式设计**：适配桌面端和移动端布局，侧边栏可折叠。
 
-### 主题切换
-- 支持浅色和深色主题
-- 自动保存用户偏好
+## 🏗️ 技术栈
 
-## 技术栈
+- **前端框架**: React 19
+- **路由管理**: React Router v7
+- **构建工具**: Vite
+- **样式方案**: Tailwind CSS v4
+- **图表库**: Recharts
+- **图标库**: Lucide React
+- **后端/数据库**: Supabase
+- **AI 服务**: Google Gemini AI
+- **工具库**: date-fns, clsx, tailwind-merge
 
-- **前端框架**：React 18
-- **构建工具**：Vite
-- **样式**：Tailwind CSS
-- **图表库**：Recharts
-- **数据库**：Supabase
-- **图标**：Lucide React
-- **日期处理**：date-fns
+## 📂 项目结构
 
-## 快速开始
+```text
+src/
+├── components/        # 可复用的 UI 组件 (Charts, Modals, Sidebar 等)
+├── contexts/          # 全局状态上下文 (Theme)
+├── lib/               # 工具函数、API 服务封装 (Supabase, Gemini)
+├── pages/             # 页面级组件 (ExpenseDashboardPage)
+├── App.jsx            # 路由配置与主布局
+└── main.jsx           # 应用入口
+```
 
-### 安装依赖
+## 🚀 快速开始
+
+### 1. 安装依赖
 
 ```bash
 npm install
 ```
 
-### 配置环境变量
+### 2. 配置环境变量
 
-复制 `.env.example` 到 `.env` 并填入你的Supabase配置：
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件：
+复制 `.env.example` 为 `.env` 并填入必要的 API Keys：
 
 ```env
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
 
-### 启动开发服务器
+### 3. 启动开发服务器
 
 ```bash
 npm run dev
 ```
 
-应用将在 http://localhost:5173 启动
+访问 http://localhost:5173 即可看到应用。
 
-### 构建生产版本
+### 4. 构建生产版本
 
 ```bash
 npm run build
 ```
 
-### 预览生产构建
+## 📝 数据库设置
 
-```bash
-npm run preview
-```
+本项目依赖 Supabase。请在 Supabase SQL Editor 中运行 `supabase-schema.sql` 和 `import_debt.sql` 来初始化数据库表结构。
 
-## 数据库设置
+## 📜 版本历史
 
-### 1. 创建Supabase项目
-
-访问 [Supabase](https://supabase.com) 并创建一个新项目
-
-### 2. 执行SQL脚本
-
-在Supabase的SQL编辑器中执行 `supabase-schema.sql` 文件中的SQL语句
-
-### 3. 获取API密钥
-
-在Supabase项目的设置中找到：
-- Project URL
-- anon public key
-
-将这些值填入 `.env` 文件
-
-## 项目结构
-
-```
-expense-tracker/
-├── src/
-│   ├── components/
-│   │   ├── charts/
-│   │   │   ├── BudgetLineChart.jsx      # 预算与消费趋势图
-│   │   │   ├── CategoryPieChart.jsx     # 类别分布饼图
-│   │   │   └── EssentialPieChart.jsx    # 必需/非必需饼图
-│   │   ├── MonthSelector.jsx             # 月份选择器
-│   │   ├── ExpenseTable.jsx             # 消费记录表格
-│   │   ├── AIExpenseModal.jsx           # AI入账弹窗
-│   │   └── Sidebar.jsx                  # 侧边栏
-│   ├── contexts/
-│   │   └── ThemeContext.jsx             # 主题上下文
-│   ├── lib/
-│   │   ├── constants.js                 # 常量定义
-│   │   ├── mockData.js                 # 模拟数据
-│   │   ├── services.js                 # 数据服务
-│   │   ├── supabase.js                # Supabase客户端
-│   │   └── utils.js                   # 工具函数
-│   ├── App.jsx                        # 主应用组件
-│   ├── main.jsx                       # 应用入口
-│   └── index.css                      # 全局样式
-├── public/                            # 静态资源
-├── supabase-schema.sql                # 数据库架构
-├── .env                              # 环境变量
-├── .env.example                      # 环境变量示例
-├── tailwind.config.js                # Tailwind配置
-├── vite.config.js                    # Vite配置
-└── vercel.json                      # Vercel部署配置
-```
-
-## 部署到Vercel
-
-### 1. 准备部署
-
-确保项目已推送到GitHub仓库
-
-### 2. 连接Vercel
-
-1. 访问 [Vercel](https://vercel.com)
-2. 点击 "New Project"
-3. 选择你的GitHub仓库
-4. 配置环境变量：
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-
-### 3. 部署
-
-点击 "Deploy" 按钮开始部署
-
-## 使用说明
-
-### 月份切换
-- 点击左右箭头切换月份
-- 第一个月是2026年1月，不能往前切换
-- 最后一个月是当前月份，不能往后切换
-
-### 添加消费记录
-1. 点击"添加"按钮
-2. 填写消费信息（日期、金额、类别、备注）
-3. 选择是否为必需消费
-4. 点击"保存"
-
-### 编辑消费记录
-1. 点击记录右侧的编辑图标
-2. 修改信息
-3. 点击保存图标确认
-
-### 删除消费记录
-- 单条删除：点击记录右侧的删除图标
-- 批量删除：勾选多条记录后点击"删除选中"按钮
-
-### AI入账
-1. 点击右上角的"AI入账"按钮
-2. 上传消费截图（支持多选）
-3. 点击"开始分析"
-4. 查看识别结果并编辑
-5. 勾选要入库的记录
-6. 点击"确认入库"
-
-### 类别管理
-1. 点击左上角菜单图标打开侧边栏
-2. 点击"设置"
-3. 在"消费类别管理"中：
-   - 编辑现有类别
-   - 添加新类别
-   - 删除类别（不影响已有数据）
-
-### 主题切换
-- 在侧边栏底部点击主题切换按钮
-- 或使用系统默认主题
-
-## 预算规则
-
-- 工作日：每天150元
-- 周末：每天100元
-- 节假日：每天100元
-
-预算调整会记录在数据库中，可以手动修改特定日期的预算。
-
-## 开发说明
-
-### 使用模拟数据
-
-当前应用使用模拟数据进行演示。要使用真实数据：
-
-1. 配置Supabase环境变量
-2. 修改 `App.jsx` 中的数据获取逻辑
-3. 使用 `lib/services.js` 中的服务函数
-
-### 添加新功能
-
-1. 在 `src/components/` 中创建新组件
-2. 在 `src/lib/services.js` 中添加数据服务
-3. 在 `App.jsx` 中集成新功能
-
-## 许可证
-
-MIT
+- **v0.1.0**: 架构重构。引入 React Router，拆分页面逻辑，新增债务追踪模块，预留饮食管理入口。
+- **v0.0.x**: 初始原型。单页应用，基础记账功能。
