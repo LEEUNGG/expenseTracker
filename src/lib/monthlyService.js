@@ -91,4 +91,36 @@ export class MonthlyService {
 
     return results;
   }
+
+  static async getMonthlyReviews(year) {
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+    
+    const { data, error } = await supabase
+      .from('monthly_plans')
+      .select('month_date, review')
+      .gte('month_date', start)
+      .lte('month_date', end);
+
+    if (error) {
+      console.error('Error fetching monthly reviews:', error);
+      return [];
+    }
+    return data;
+  }
+
+  static async updateMonthlyReview(year, month, review) {
+    const monthDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    
+    // Use upsert to handle both insert and update
+    const { error } = await supabase
+      .from('monthly_plans')
+      .upsert({ 
+        month_date: monthDate, 
+        review,
+        updated_at: new Date()
+      }, { onConflict: 'month_date' });
+      
+    if (error) throw error;
+  }
 }
