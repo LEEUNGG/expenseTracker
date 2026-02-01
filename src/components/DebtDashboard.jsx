@@ -7,9 +7,11 @@ import { Loader2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DebtService } from '../lib/debtService';
 import { 
   format, isSameMonth, addMonths, subMonths, startOfMonth, 
-  isAfter, isBefore, getDaysInMonth, isSameDay 
+  isAfter, isBefore, getDaysInMonth 
 } from 'date-fns';
 import { Skeleton, SkeletonLineChart } from './Skeleton';
+import { MonthlyRepaymentChecklist } from './MonthlyRepaymentChecklist';
+import { MORANDI_THEME } from '../lib/chartTheme';
 
 // Skeleton component for a chart card
 function ChartSkeleton() {
@@ -72,14 +74,14 @@ export function DebtDashboard() {
     });
   }, [debts]);
 
-  const repaymentSchedule = [
+  const repaymentSchedule = useMemo(() => ([
     { name: 'CMB', day: 13, key: 'cmb' },
     { name: 'TIKTOK', day: 13, key: 'tiktok' },
     { name: 'ALI_HUA', day: 20, key: 'ali_hua' },
     { name: 'JD_WHITE', day: 23, key: 'jd_white' },
     { name: 'ALI_JIE', day: 26, key: 'ali_jie' },
     { name: 'JD_GOLD', day: 26, key: 'jd_gold' },
-  ];
+  ]), []);
 
   // Custom Tooltip for Monthly Repayment Chart
   const CustomTooltip = ({ active, payload, label }) => {
@@ -91,7 +93,7 @@ export function DebtDashboard() {
           <div className="space-y-1">
             <div className="flex justify-between items-center pb-2 border-b border-gray-100 dark:border-gray-700 mb-2">
               <span className="text-sm text-gray-500 dark:text-gray-400">Total</span>
-              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">¥{data.currentDebt.toLocaleString()}</span>
+              <span className="text-sm font-bold" style={{ color: MORANDI_THEME.charts.debt.current }}>¥{data.currentDebt.toLocaleString()}</span>
             </div>
             {repaymentSchedule.map((item) => {
               const amount = Number(data[item.key]) || 0;
@@ -111,7 +113,7 @@ export function DebtDashboard() {
   };
 
   // Min/Max Dates
-  const minDate = new Date(2026, 0, 1); // Jan 2026
+  const minDate = useMemo(() => new Date(2026, 0, 1), []);
   const maxDate = useMemo(() => {
     if (!debts.length) return new Date();
     const dates = debts.map(d => new Date(d.month_date));
@@ -120,6 +122,17 @@ export function DebtDashboard() {
 
   const canGoPrev = isAfter(startOfMonth(timelineDate), startOfMonth(minDate));
   const canGoNext = isBefore(startOfMonth(timelineDate), startOfMonth(maxDate));
+
+  useEffect(() => {
+    if (!debts.length) return;
+    const currentMonth = startOfMonth(new Date());
+    const minMonth = startOfMonth(minDate);
+    const maxMonth = startOfMonth(maxDate);
+    let nextDate = currentMonth;
+    if (isBefore(currentMonth, minMonth)) nextDate = minMonth;
+    if (isAfter(currentMonth, maxMonth)) nextDate = maxMonth;
+    setTimelineDate(nextDate);
+  }, [debts, maxDate, minDate]);
 
   const handlePrevMonth = () => {
     if (canGoPrev) setTimelineDate(prev => subMonths(prev, 1));
@@ -152,7 +165,7 @@ export function DebtDashboard() {
       items,
       count: items.length
     })).sort((a, b) => a.day - b.day);
-  }, [debts, timelineDate]);
+  }, [debts, timelineDate, repaymentSchedule]);
 
   // Beijing Time Today
   const todayBJ = useMemo(() => {
@@ -368,9 +381,7 @@ export function DebtDashboard() {
               const hasDebt = group.count > 0;
               
               // Circle Color: Red if Today, otherwise Blue
-              const circleColorClass = isToday 
-                ? "bg-red-500 dark:bg-red-600 border-red-100 dark:border-red-900/30" 
-                : "bg-blue-500 dark:bg-blue-600 border-white dark:border-gray-800";
+              const bgColor = isToday ? MORANDI_THEME.semantic.danger : MORANDI_THEME.semantic.primary;
               
               return (
                 <div 
@@ -379,10 +390,13 @@ export function DebtDashboard() {
                   style={{ left: `${percent}%`, transform: 'translateX(-50%)' }}
                 >
                   {/* Unified Circle Component */}
-                  <div className={`
-                    w-8 h-8 rounded-full border-4 shadow-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer
-                    ${circleColorClass}
-                  `}>
+                  <div 
+                    className={`
+                      w-8 h-8 rounded-full border-4 shadow-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer
+                      border-white dark:border-gray-800
+                    `}
+                    style={{ backgroundColor: bgColor }}
+                  >
                     {hasDebt ? (
                       <span className="text-xs font-bold text-white">{group.count}</span>
                     ) : (
@@ -430,7 +444,15 @@ export function DebtDashboard() {
               <span>Today</span>
             </div>
           </div>
+
         </div>
+
+        <MonthlyRepaymentChecklist
+          debts={debts}
+          repaymentSchedule={repaymentSchedule}
+          minDate={minDate}
+          maxDate={maxDate}
+        />
 
       </div>
     </div>

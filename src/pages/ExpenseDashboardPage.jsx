@@ -7,11 +7,12 @@ import { EssentialPieChart } from '../components/charts/EssentialPieChart';
 import { ExpenseTable } from '../components/ExpenseTable';
 import { AIExpenseModal } from '../components/AIExpenseModal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { ExpenseService, BudgetService } from '../lib/services';
+import { ExpenseService, BudgetService, MonthlyPlanService } from '../lib/services';
 import { extractDateTimeFromTimestamp } from '../lib/deduplicationService';
 import { getDayType } from '../lib/holidayUtils';
 import { useToast } from '../components/Toast';
 import { Skeleton, SkeletonLineChart, SkeletonPieChart, SkeletonTable } from '../components/Skeleton';
+import { MonthlyBudgetPlanner } from '../components/MonthlyBudgetPlanner';
 
 export function ExpenseDashboardPage({ categories }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -21,6 +22,7 @@ export function ExpenseDashboardPage({ categories }) {
   const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPlanConfirmed, setIsPlanConfirmed] = useState(false);
   const [error, setError] = useState(null);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -120,10 +122,15 @@ export function ExpenseDashboardPage({ categories }) {
     const accumulativeBudgets = BudgetService.calculateAccumulativeBudget(dailyBudgets);
 
     const holidayMap = new Map(holidays.map(h => [h.date, h.type]));
-    const adjustmentsMap = new Map(budgetAdjustments.map(a => [a.date, true]));
+    // Only mark as "adjustment" if the reason is explicitly "Manual adjustment from chart"
+    const adjustmentsMap = new Map(
+      budgetAdjustments
+        .filter(a => a.reason === 'Manual adjustment from chart')
+        .map(a => [a.date, true])
+    );
 
     const dailySpending = new Array(daysInMonth).fill(0);
-    filteredExpenses.forEach(expense => {
+    expenses.forEach(expense => {
       const day = (expense._day ?? new Date(expense.transaction_datetime).getDate()) - 1;
       dailySpending[day] += expense._amount;
     });
@@ -193,7 +200,7 @@ export function ExpenseDashboardPage({ categories }) {
       { name: 'Essential', value: Math.round(essentialTotal * 100) / 100 },
       { name: 'Non-essential', value: Math.round(nonEssentialTotal * 100) / 100 },
     ];
-  }, [filteredExpenses]);
+  }, [expenses]);
 
   const maxSpending = useMemo(() => {
     const allValues = chartData.flatMap(d => [d.budget, d.spending]).filter(v => Number.isFinite(v));
@@ -207,6 +214,13 @@ export function ExpenseDashboardPage({ categories }) {
       setIsLoading(true);
       setError(null);
       try {
+        // 1. Check if monthly plan is confirmed
+        const plan = await MonthlyPlanService.getPlan(currentYear, currentMonthNum);
+        console.log('DEBUG: Monthly Plan Query:', { year: currentYear, month: currentMonthNum, plan });
+        const isConfirmed = !!plan?.is_confirmed;
+        setIsPlanConfirmed(isConfirmed);
+
+        // 2. Fetch other data
         const [expensesData, budgetData, holidaysData] = await Promise.all([
           ExpenseService.getExpensesByMonth(currentYear, currentMonthNum),
           BudgetService.getBudgetAdjustments(currentYear, currentMonthNum),
@@ -446,6 +460,11 @@ export function ExpenseDashboardPage({ categories }) {
             <SkeletonTable />
           </div>
         </div>
+      ) : !isPlanConfirmed ? (
+        <MonthlyBudgetPlanner 
+          currentDate={currentMonth} 
+          onPlanConfirmed={() => setIsPlanConfirmed(true)} 
+        />
       ) : (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
@@ -472,8 +491,8 @@ export function ExpenseDashboardPage({ categories }) {
 
           <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/20 dark:border-gray-700/50">
             <ExpenseTable
-              expenses={filteredExpenses}
-              allExpenses={filteredExpenses}
+              expenses={expenses}
+              allExpenses={expenses}
               categories={activeCategories}
               currentMonth={currentMonth}
               onCreate={handleCreateExpense}

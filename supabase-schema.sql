@@ -144,3 +144,28 @@ CREATE TABLE IF NOT EXISTS debts (
 -- Enable RLS for debts
 ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all access for all users" ON debts FOR ALL USING (true);
+
+CREATE TABLE IF NOT EXISTS debt_repayment_statuses (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  month_date DATE NOT NULL,
+  debt_key TEXT NOT NULL,
+  is_paid BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (month_date, debt_key)
+);
+
+ALTER TABLE debt_repayment_statuses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all access for all users" ON debt_repayment_statuses FOR ALL USING (true);
+-- Create monthly_plans table to track if a month's budget is confirmed
+CREATE TABLE IF NOT EXISTS monthly_plans (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  month_date DATE NOT NULL UNIQUE, -- Storing the first day of the month (e.g., 2026-02-01)
+  is_confirmed BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS for monthly_plans
+ALTER TABLE monthly_plans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all access for all users" ON monthly_plans FOR ALL USING (true);

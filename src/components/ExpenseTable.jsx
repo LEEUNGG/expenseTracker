@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Pencil, Trash2, Plus, Check, X, Sparkles, ArrowUp, ArrowDown, ArrowUpDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { DateSelector } from './DateSelector';
 import { extractDateTimeFromTimestamp } from '../lib/deduplicationService';
 
 const getExpenseDateStr = (expense) => {
@@ -110,27 +111,7 @@ export function ExpenseTable({
     const maxDay = isCurrentMonth ? today.getDate() : daysInMonth;
 
     // Day navigation handlers
-    const _canGoPrevDay = selectedDay === null || selectedDay > 1;
-    const _canGoNextDay = selectedDay !== null && selectedDay < maxDay;
-
-    const handlePrevDay = () => {
-        if (selectedDay === null) {
-            // From "All", go to the last day (today or month end)
-            setSelectedDay(maxDay);
-        } else if (selectedDay > 1) {
-            setSelectedDay(selectedDay - 1);
-        }
-    };
-
-    const handleNextDay = () => {
-        if (selectedDay !== null && selectedDay < maxDay) {
-            setSelectedDay(selectedDay + 1);
-        }
-    };
-
-    const handleShowAll = () => {
-        setSelectedDay(null);
-    };
+    // Moved logic to DateSelector component
 
     // Filter expenses by day first, then by search query
     const dayFilteredExpenses = useMemo(() => {
@@ -360,8 +341,21 @@ export function ExpenseTable({
             return;
         }
 
+        // Auto-inject current time if adding for today (Beijing/Local time)
+        const now = new Date();
+        const todayStr = formatLocalDate(now);
+        let timeStr = undefined;
+        
+        if (newExpense.date === todayStr) {
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            timeStr = `${hours}:${minutes}:${seconds}`;
+        }
+
         const expenseToSave = {
             date: newExpense.date,
+            time: timeStr,
             category_id: newExpense.category_id,
             note: newExpense.description || '',
             amount: parseFloat(newExpense.amount),
@@ -384,8 +378,22 @@ export function ExpenseTable({
     const handleEditClick = (expense) => {
         setEditingId(expense.id);
         const dateStr = getExpenseDateStr(expense);
+        
+        // Extract time from transaction_datetime to preserve it
+        let timeStr = undefined;
+        if (expense.transaction_datetime) {
+            const dt = new Date(expense.transaction_datetime);
+            if (!isNaN(dt.getTime())) {
+                const hours = String(dt.getHours()).padStart(2, '0');
+                const minutes = String(dt.getMinutes()).padStart(2, '0');
+                const seconds = String(dt.getSeconds()).padStart(2, '0');
+                timeStr = `${hours}:${minutes}:${seconds}`;
+            }
+        }
+
         setEditingExpense({
             date: dateStr,
+            time: timeStr,
             category_id: expense.category_id,
             description: expense.note || expense.description || '',
             amount: expense.amount.toString(),
@@ -401,6 +409,7 @@ export function ExpenseTable({
 
         const expenseToUpdate = {
             date: editingExpense.date,
+            time: editingExpense.time,
             category_id: editingExpense.category_id,
             note: editingExpense.description || '',
             amount: parseFloat(editingExpense.amount),
@@ -488,47 +497,12 @@ export function ExpenseTable({
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
                     {/* Day Selector - Compact inline design */}
-                    <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-gray-800/80 rounded-lg p-0.5">
-                        <button
-                            onClick={handlePrevDay}
-                            disabled={selectedDay === 1}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all duration-200",
-                                selectedDay === 1
-                                    ? "opacity-30 cursor-not-allowed text-gray-400"
-                                    : "hover:bg-white dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
-                            )}
-                            title="Previous day"
-                        >
-                            <ChevronLeft className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        <button
-                            onClick={handleShowAll}
-                            className={cn(
-                                "px-2 py-1 text-xs font-medium rounded-md transition-all duration-200 min-w-[50px]",
-                                selectedDay === null
-                                    ? "bg-white dark:bg-gray-700 text-violet-600 dark:text-violet-400 shadow-sm"
-                                    : "text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-700/50"
-                            )}
-                        >
-                            {selectedDay === null ? 'All' : `${selectedDay}${getOrdinalSuffix(selectedDay)}`}
-                        </button>
-                        
-                        <button
-                            onClick={handleNextDay}
-                            disabled={selectedDay === null || selectedDay >= maxDay}
-                            className={cn(
-                                "p-1.5 rounded-md transition-all duration-200",
-                                (selectedDay === null || selectedDay >= maxDay)
-                                    ? "opacity-30 cursor-not-allowed text-gray-400"
-                                    : "hover:bg-white dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
-                            )}
-                            title="Next day"
-                        >
-                            <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
+                    <DateSelector
+                        selectedDay={selectedDay}
+                        currentMonth={currentMonth}
+                        maxDay={maxDay}
+                        onSelectDay={setSelectedDay}
+                    />
 
                     {selectedIds.length > 0 ? (
                         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -771,7 +745,7 @@ export function ExpenseTable({
                                                     const cat = getCategory(expense.category_id);
                                                     return (
                                                         <span
-                                                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                                                            className="inline-flex w-full justify-center items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
                                                             style={{
                                                                 backgroundColor: cat ? `${cat.color}20` : undefined,
                                                                 color: cat ? cat.color : undefined,

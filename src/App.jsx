@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'rea
 import { Sidebar } from './components/Sidebar';
 import { DebtDashboard } from './components/DebtDashboard';
 import { ExpenseDashboardPage } from './pages/ExpenseDashboardPage';
+import { MonthlySpendingPage } from './pages/MonthlySpendingPage';
 import { CategoryService } from './lib/services';
 import { useToast } from './components/Toast';
 
@@ -19,7 +20,8 @@ function Layout({
   
   const getTitle = () => {
     switch (location.pathname) {
-      case '/expenses': return 'Expense Tracker';
+      case '/expenses': return 'Daily Spending';
+      case '/monthly-spending': return 'Monthly Spending';
       case '/debt': return 'Debt Tracker';
       case '/diet': return 'Diet Management';
       default: return 'Expense Tracker';
@@ -134,6 +136,7 @@ function App() {
           />}>
           <Route path="/" element={<Navigate to="/expenses" replace />} />
           <Route path="/expenses" element={<ExpenseDashboardPage categories={categories} />} />
+          <Route path="/monthly-spending" element={<MonthlySpendingPage />} />
           <Route path="/debt" element={<DebtDashboard />} />
           <Route path="/diet" element={
             <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-4">

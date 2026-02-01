@@ -1,103 +1,85 @@
-import { useState, memo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, Sector } from 'recharts';
+import ReactECharts from 'echarts-for-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { memo } from 'react';
+import { MORANDI_THEME } from '../../lib/chartTheme';
 
-const COLORS = [
-  '#10b981', '#3b82f6', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
-];
+const COLORS = MORANDI_THEME.colors;
 
 const CategoryPieChart = memo(function CategoryPieChart({ data }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [activeIndex, setActiveIndex] = useState(-1);
-
-  const onPieEnter = (_, index) => {
-    setActiveIndex(index);
-  };
-
-  const onPieLeave = () => {
-    setActiveIndex(-1);
-  };
-
-  const renderActiveShape = (props) => {
-    const { cx, cy, midAngle, innerRadius, outerRadius, startAngle, endAngle, fill, payload, percent } = props;
-    const RADIAN = Math.PI / 180;
-    const cos = Math.cos(-RADIAN * midAngle);
-    const mx = cx + (outerRadius + 30) * cos;
-    const my = cy + (outerRadius + 30) * Math.sin(-RADIAN * midAngle);
-    const ex = mx + (cos >= 0 ? 1 : -1) * 22;
-    const ey = my;
-    const textAnchor = cos >= 0 ? 'start' : 'end';
-
-    return (
-      <g>
-        <Sector
-          cx={cx}
-          cy={cy}
-          innerRadius={innerRadius}
-          outerRadius={outerRadius + 6}
-          startAngle={startAngle}
-          endAngle={endAngle}
-          fill={fill}
-        />
-        <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey} textAnchor={textAnchor} fill={isDark ? "#f3f4f6" : "#374151"} fontSize={14} fontWeight="bold">
-          {payload.name}
-        </text>
-        <text x={ex + (cos >= 0 ? 1 : -1) * 12} y={ey} dy={18} textAnchor={textAnchor} fill={isDark ? "#9ca3af" : "#6b7280"} fontSize={12}>
-          {`${(percent * 100).toFixed(1)}%`}
-        </text>
-      </g>
-    );
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: isDark ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+      borderColor: isDark ? 'rgba(75, 85, 99, 0.5)' : '#e5e7eb',
+      textStyle: {
+        color: isDark ? '#fff' : '#111827'
+      },
+      padding: [10, 15],
+      borderRadius: 12,
+      extraCssText: 'backdrop-filter: blur(8px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);',
+      formatter: '{b}: ¥{c} ({d}%)'
+    },
+    legend: {
+      bottom: '0%',
+      left: 'center',
+      textStyle: {
+        color: isDark ? '#9ca3af' : '#6b7280',
+        fontSize: 12
+      },
+      itemGap: 15,
+      itemWidth: 10,
+      itemHeight: 10
+    },
+    series: [
+      {
+        name: 'Category',
+        type: 'pie',
+        radius: ['50%', '70%'],
+        center: ['50%', '45%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 8,
+          borderColor: isDark ? '#1f2937' : '#fff',
+          borderWidth: 2
+        },
+        label: {
+          show: false,
+          position: 'center'
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 16,
+            fontWeight: 'bold',
+            color: isDark ? '#fff' : '#1f2937'
+          },
+          scale: true,
+          scaleSize: 10
+        },
+        labelLine: {
+          show: false
+        },
+        data: data.map((item, index) => ({
+          value: item.value,
+          name: item.name,
+          // Force theme colors for consistency and Morandi look, ignoring database colors
+          itemStyle: { color: COLORS[index % COLORS.length] }
+        }))
+      }
+    ]
   };
 
   return (
-    <div style={{ height: '300px' }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            activeIndex={activeIndex}
-            activeShape={renderActiveShape}
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={60}
-            outerRadius={80}
-            paddingAngle={5}
-            dataKey="value"
-            onMouseEnter={onPieEnter}
-            onMouseLeave={onPieLeave}
-            label={false}
-            isAnimationActive={false}
-          >
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{
-              backgroundColor: isDark ? 'rgba(31, 41, 55, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-              border: isDark ? '1px solid #374151' : '1px solid #e5e7eb',
-              borderRadius: '12px',
-              padding: '8px 12px',
-              boxShadow: '0 8px 16px -4px rgba(0, 0, 0, 0.1)',
-            }}
-            itemStyle={{ color: isDark ? '#f3f4f6' : '#1f2937' }}
-            cursor={false}
-          />
-          <Legend
-            verticalAlign="bottom"
-            height={36}
-            iconType="circle"
-            formatter={(value) => (
-              <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {value}
-              </span>
-            )}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="w-full h-[300px]">
+      <ReactECharts 
+        option={option} 
+        style={{ height: '100%', width: '100%' }}
+        theme={isDark ? 'dark' : undefined}
+      />
     </div>
   );
 });

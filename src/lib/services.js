@@ -2,8 +2,14 @@ import { supabase } from './supabase.js';
 import { BUDGET_RULES } from './constants.js';
 
 const pad2 = (value) => String(value).padStart(2, '0');
-const buildBeijingDateTime = (dateStr, timeStr) =>
-  timeStr ? `${dateStr}T${timeStr}:00+08:00` : `${dateStr}T00:00:00+08:00`;
+const buildBeijingDateTime = (dateStr, timeStr) => {
+  if (timeStr) {
+    // If timeStr is HH:MM, append :00. If HH:MM:SS, use as is.
+    const time = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
+    return `${dateStr}T${time}+08:00`;
+  }
+  return `${dateStr}T00:00:00+08:00`;
+};
 const getBeijingNow = () => {
   const now = new Date();
   const parts = new Intl.DateTimeFormat('sv-SE', {
@@ -129,6 +135,20 @@ export class ExpenseService {
     if (error) throw error;
     return { data, count, totalPages: Math.ceil(count / pageSize) };
   }
+
+  static async getExpensesByYear(year) {
+    const start = `${year}-01-01T00:00:00+08:00`;
+    const end = `${year}-12-31T23:59:59+08:00`;
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('amount, transaction_datetime')
+      .gte('transaction_datetime', start)
+      .lte('transaction_datetime', end);
+
+    if (error) throw error;
+    return data;
+  }
 }
 
 export class CategoryService {
@@ -227,6 +247,16 @@ export class BudgetService {
     return data;
   }
 
+  static async bulkUpsertBudgetAdjustments(adjustments) {
+    const { data, error } = await supabase
+      .from('budget_adjustments')
+      .upsert(adjustments, { onConflict: 'date' })
+      .select();
+
+    if (error) throw error;
+    return data;
+  }
+
   static calculateDailyBudget(year, month, adjustments = [], holidays = []) {
     const daysInMonth = new Date(year, month, 0).getDate();
     const adjustmentsMap = new Map(
@@ -267,4 +297,73 @@ export class BudgetService {
       return total;
     });
   }
+
+  static async getBudgetAdjustmentsByYear(year) {
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+
+    const { data, error } = await supabase
+      .from('budget_adjustments')
+      .select('*')
+      .gte('date', start)
+      .lte('date', end);
+
+    if (error) throw error;
+    return data;
+  }
+
+  static async getHolidaysByYear(year) {
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('*')
+      .gte('date', start)
+      .lte('date', end);
+
+    if (error) throw error;
+    return data;
+  }
 }
+
+export class MonthlyPlanService {
+  static async getPlan(year, month) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const { data, error } = await supabase
+      .from('monthly_plans')
+      .select('*')
+      .eq('month_date', dateStr)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "not found"
+    return data;
+  }
+
+  static async confirmPlan(year, month, dailyBudgets) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    
+    // 1. Upsert monthly plan
+    const { error: planError } = await supabase
+      .from('monthly_plans')
+      .upsert({ 
+        month_date: dateStr, 
+        is_confirmed: true,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'month_date' });
+
+    if (planError) throw planError;
+
+    // 2. Bulk upsert budget adjustments
+    // dailyBudgets is array of { date, amount, note }
+    const adjustments = dailyBudgets.map(b => ({
+      date: b.date,
+      budget_amount: b.amount,
+      reason: b.note || 'Monthly Plan Locked', // Use user note or default
+      updated_at: new Date().toISOString()
+    }));
+
+    await BudgetService.bulkUpsertBudgetAdjustments(adjustments);
+  }
+}
+

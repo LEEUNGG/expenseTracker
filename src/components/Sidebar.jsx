@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Settings, Moon, Sun, X, Plus, Edit2, Trash2, Save, LayoutDashboard, CreditCard, Utensils } from 'lucide-react';
+import { Settings, Moon, Sun, X, Plus, Edit2, Trash2, Save, LayoutDashboard, CreditCard, Utensils, BarChart3 } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../contexts/ThemeContext';
@@ -85,7 +85,20 @@ export function Sidebar({ isOpen, onClose, categories, onCategoryUpdate, onCateg
                 )}
               >
                 <LayoutDashboard className="w-5 h-5" />
-                <span>Expense Tracker</span>
+                <span>Daily Spending</span>
+              </NavLink>
+              <NavLink 
+                to="/monthly-spending"
+                onClick={onClose}
+                className={({ isActive }) => cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors", 
+                  isActive 
+                    ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium" 
+                    : "hover:bg-gray-100 dark:hover:bg-gray-700"
+                )}
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span>Monthly Spending</span>
               </NavLink>
               <NavLink 
                 to="/debt"
