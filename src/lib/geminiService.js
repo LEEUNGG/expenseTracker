@@ -181,8 +181,8 @@ export function parseGeminiResponse(response) {
 
     // Ensure date is valid, default to today if not
     if (!expense.date || !/^\d{4}-\d{2}-\d{2}$/.test(expense.date)) {
-      const today = new Date();
-      expense.date = today.toISOString().split('T')[0];
+      const now = new Date();
+      expense.date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     }
 
     // Validate and normalize time field (HH:mm format or null)

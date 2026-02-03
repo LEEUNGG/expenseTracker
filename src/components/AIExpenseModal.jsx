@@ -1062,17 +1062,22 @@ function ResultsEditor({ expenses, categories, onExpensesChange, onConfirm, isSa
       return expenses;
     }
 
-    const getTimestamp = (expense) => {
-      if (!expense?.date) return 0;
-      const timePart = expense.time ? expense.time : '00:00:00';
-      const withTime = new Date(`${expense.date}T${timePart}`);
-      if (!Number.isNaN(withTime.getTime())) return withTime.getTime();
-      const dateOnly = new Date(expense.date);
-      return Number.isNaN(dateOnly.getTime()) ? 0 : dateOnly.getTime();
+    // Use string comparison for robust sorting (YYYY-MM-DDTHH:mm)
+    // This avoids Date object parsing inconsistencies across browsers/timezones
+    const getSortKey = (expense) => {
+      if (!expense?.date) return '';
+      // Pad with 00:00 to match HH:mm format length for correct string comparison
+      const timePart = expense.time ? expense.time : '00:00';
+      return `${expense.date}T${timePart}`;
     };
 
     return [...expenses].sort((a, b) => {
-      const delta = getTimestamp(a) - getTimestamp(b);
+      const keyA = getSortKey(a);
+      const keyB = getSortKey(b);
+      
+      if (keyA === keyB) return 0;
+      const delta = keyA > keyB ? 1 : -1;
+      
       return dateSortDirection === 'asc' ? delta : -delta;
     });
   }, [expenses, dateSortDirection]);

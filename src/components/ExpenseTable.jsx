@@ -380,8 +380,23 @@ export function ExpenseTable({
         const dateStr = getExpenseDateStr(expense);
         
         // Extract time from transaction_datetime to preserve it
+        // We parse the string directly to avoid timezone conversions that might shift the time
         let timeStr = undefined;
-        if (expense.transaction_datetime) {
+        if (expense.transaction_datetime && typeof expense.transaction_datetime === 'string') {
+            const match = expense.transaction_datetime.match(/T(\d{2}:\d{2}:\d{2})/);
+            if (match) {
+                timeStr = match[1];
+            } else {
+                // Fallback for HH:MM format
+                const matchShort = expense.transaction_datetime.match(/T(\d{2}:\d{2})/);
+                if (matchShort) {
+                    timeStr = `${matchShort[1]}:00`;
+                }
+            }
+        }
+
+        // Fallback to Date object parsing if string matching fails but value exists
+        if (!timeStr && expense.transaction_datetime) {
             const dt = new Date(expense.transaction_datetime);
             if (!isNaN(dt.getTime())) {
                 const hours = String(dt.getHours()).padStart(2, '0');
